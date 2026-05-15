@@ -845,8 +845,9 @@ tbody tr.row-applied:hover td      { background: var(--teal-dim); opacity: 0.8; 
   box-shadow: 0 4px 32px -8px rgba(139,92,246,0.18);
 }
 
-/* Overview spans full width */
-.sp2-section:first-child { grid-column: 1 / -1; }
+/* Overview + Goal span full width */
+.sp2-section:first-child  { grid-column: 1 / -1; }
+.sp2-section:nth-child(2) { grid-column: 1 / -1; }
 
 .sp2-heading {
   font-size: 0.65rem;
@@ -1165,7 +1166,8 @@ tbody tr.row-applied:hover td      { background: var(--teal-dim); opacity: 0.8; 
 
 .cp-search {
   width: 220px;
-  flex-shrink: 0;
+  max-width: 100%;
+  flex-shrink: 1;
   background: var(--surface);
   border: 1px solid var(--border);
   color: var(--text-1);
@@ -2226,6 +2228,9 @@ tbody tr.row-applied:hover td      { background: var(--teal-dim); opacity: 0.8; 
 @media (max-width: 768px) {
   .app { padding: 0 16px; }
   .terminal-main { margin-left: -16px; margin-right: -16px; }
+  .cp-controls { flex-direction: column; align-items: stretch; }
+  .cp-search { width: 100%; }
+  .cp-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
 
   /* Header: stack logo+controls on top, tabs below */
   .header {
@@ -2278,6 +2283,24 @@ tbody tr.row-applied:hover td      { background: var(--teal-dim); opacity: 0.8; 
   .search-input { min-width: 0; flex: 1 1 140px; }
   .company-select { flex: 1 1 120px; }
   .smart-filter-toggle { flex-shrink: 0; }
+
+  /* Stats: single column, chart scrollable */
+  .sp2 { grid-template-columns: 1fr; }
+  .sp2-section:nth-child(2) { grid-column: 1; }
+  .sp2-chart { overflow-x: auto; }
+  .sp2-col   { min-width: 18px; }
+
+  /* Leaderboard list rows: compress columns */
+  .lb-row-inner {
+    grid-template-columns: 32px 32px 1fr 40px 40px;
+    gap: 8px;
+    padding: 10px 12px;
+  }
+  .lb-today { display: none; } /* hide "today" column, keep week + total */
+  .lb-legend-item:last-child { display: none; } /* hide today from legend too */
+
+  /* Leaderboard header: stack */
+  .lb-header { flex-direction: column; align-items: flex-start; gap: 10px; }
 }
 
 @media (max-width: 480px) {
@@ -2290,4 +2313,12 @@ tbody tr.row-applied:hover td      { background: var(--teal-dim); opacity: 0.8; 
   .terminal-toolbar { padding: 6px 8px; }
   .terminal-filter { max-width: 120px; }
   .terminal-count { display: none; }
+
+  /* Stats cards: 2 per row minimum */
+  .sp2-card { min-width: calc(50% - 8px); }
+
+  /* Leaderboard rows: rank + name + total only */
+  .lb-row-inner { grid-template-columns: 28px 28px 1fr 36px; gap: 6px; }
+  .lb-week { display: none; }
+  .lb-legend { display: none; }
 }

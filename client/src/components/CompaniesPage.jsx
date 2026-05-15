@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { authFetch } from '../auth';
 
 const ATS_META = {
   greenhouse:      { label: 'Greenhouse',      color: '#4ade80', bg: 'rgba(74,222,128,0.12)'  },
@@ -21,7 +22,7 @@ export default function CompaniesPage() {
   const [atsFilter, setAtsFilter] = useState('all');
 
   useEffect(() => {
-    fetch('/jobs/sources')
+    authFetch('/jobs/sources')
       .then(r => r.json())
       .then(data => { setSources(data); setLoading(false); })
       .catch(() => setLoading(false));

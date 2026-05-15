@@ -3,12 +3,14 @@ services:
     name: hireradar-api
     runtime: node
     rootDir: server
-    buildCommand: npm install && npx playwright install chromium --with-deps
+    buildCommand: npm install && PLAYWRIGHT_BROWSERS_PATH=/opt/render/project/.browsers npx playwright install chromium --with-deps
     startCommand: npm start
     plan: free
     envVars:
       - key: NODE_ENV
         value: production
+      - key: PLAYWRIGHT_BROWSERS_PATH
+        value: /opt/render/project/.browsers
       - key: MONGO_URI
         sync: false
       - key: JWT_SECRET
