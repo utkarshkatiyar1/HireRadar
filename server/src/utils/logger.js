@@ -33,4 +33,6 @@ const subscribe = (send) => {
 
 const getBuffer = () => [...buffer];
 
-module.exports = { subscribe, getBuffer, ADMIN_EMAIL };
+const clearBuffer = () => { buffer.length = 0; };
+
+module.exports = { subscribe, getBuffer, clearBuffer, ADMIN_EMAIL };

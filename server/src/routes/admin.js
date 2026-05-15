@@ -1,7 +1,7 @@
 const router = require('express').Router();
 const jwt = require('jsonwebtoken');
 const { SECRET } = require('../middleware/auth');
-const { subscribe, getBuffer, ADMIN_EMAIL } = require('../utils/logger');
+const { subscribe, getBuffer, clearBuffer, ADMIN_EMAIL } = require('../utils/logger');
 
 let scrapeRunning = false;
 
@@ -46,6 +46,12 @@ router.get('/logs', requireAdmin, (req, res) => {
     clearInterval(ping);
     unsubscribe();
   });
+});
+
+// DELETE /admin/logs — clear the server-side log buffer (admin only)
+router.delete('/logs', requireAdmin, (_req, res) => {
+  clearBuffer();
+  res.json({ ok: true });
 });
 
 // POST /admin/scrape — manually trigger a full scrape run (admin only)

@@ -76,7 +76,13 @@ export default function TerminalPage() {
         <button className="terminal-btn" onClick={() => setPaused(p => !p)}>
           {paused ? '▶ Resume' : '⏸ Pause'}
         </button>
-        <button className="terminal-btn danger" onClick={() => setEntries([])}>
+        <button className="terminal-btn danger" onClick={async () => {
+          setEntries([]);
+          await fetch('/admin/logs', {
+            method: 'DELETE',
+            headers: { Authorization: `Bearer ${token}` },
+          });
+        }}>
           Clear
         </button>
       </div>

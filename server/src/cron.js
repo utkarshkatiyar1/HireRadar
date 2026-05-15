@@ -18,16 +18,16 @@ app.use('/auth', authRouter);
 app.use('/jobs', jobsRouter);
 app.use('/admin', adminRouter);
 
+// Health check — UptimeRobot pings this to keep Render awake
+app.get('/health', (_req, res) => res.json({ ok: true }));
+
 (async () => {
   await connect();
   console.log('MongoDB connected');
-
   app.listen(PORT, () => console.log(`API  → http://localhost:${PORT}/jobs`));
 
-  await scrape();
-
   cron.schedule('0 */2 * * *', async () => {
-    console.log(`[CRON] ${new Date().toISOString()}`);
+    console.log(`[CRON] ${new Date().toISOString()} — starting scrape`);
     await scrape();
   });
 
