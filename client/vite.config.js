@@ -11,7 +11,6 @@ export default defineConfig({
       '/admin': {
         target: 'http://localhost:5000',
         changeOrigin: true,
-        // Disable response buffering so SSE events pass through immediately
         configure: (proxy) => {
           proxy.on('proxyRes', (proxyRes) => {
             proxyRes.headers['cache-control'] = 'no-cache';

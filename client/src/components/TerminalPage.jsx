@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../auth';
 
+const API = import.meta.env.VITE_API_URL ?? '';
+
 const LEVEL_COLOR = { INFO: '#4ade80', WARN: '#facc15', ERROR: '#f87171' };
 
 const fmt = (iso) => iso.replace('T', ' ').slice(0, 23); // "2026-05-15 17:48:27.963"
@@ -22,7 +24,7 @@ export default function TerminalPage() {
     if (!token) return;
 
     // EventSource with token as query param (can't set headers on EventSource)
-    const es = new EventSource(`/admin/logs?token=${encodeURIComponent(token)}`);
+    const es = new EventSource(`${API}/admin/logs?token=${encodeURIComponent(token)}`);
 
     es.onopen = () => setConnected(true);
 
@@ -78,7 +80,7 @@ export default function TerminalPage() {
         </button>
         <button className="terminal-btn danger" onClick={async () => {
           setEntries([]);
-          await fetch('/admin/logs', {
+          await fetch(`${API}/admin/logs`, {
             method: 'DELETE',
             headers: { Authorization: `Bearer ${token}` },
           });

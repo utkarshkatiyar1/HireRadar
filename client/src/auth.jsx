@@ -3,6 +3,9 @@ import { createContext, useContext, useState, useCallback, useEffect } from 'rea
 const TOKEN_KEY = 'hr_token';
 const USER_KEY  = 'hr_user';
 
+// In dev, Vite proxy handles relative URLs. In production, prefix with the API base.
+const API = import.meta.env.VITE_API_URL ?? '';
+
 const AuthCtx = createContext(null);
 
 export function AuthProvider({ children }) {
@@ -19,7 +22,7 @@ export function AuthProvider({ children }) {
   };
 
   const login = useCallback(async (email, password) => {
-    const res = await fetch('/auth/login', {
+    const res = await fetch(`${API}/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password }),
@@ -30,7 +33,7 @@ export function AuthProvider({ children }) {
   }, []);
 
   const signup = useCallback(async (email, name, password) => {
-    const res = await fetch('/auth/signup', {
+    const res = await fetch(`${API}/auth/signup`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, name, password }),
@@ -62,7 +65,7 @@ export async function authFetch(url, opts = {}) {
   const token = localStorage.getItem(TOKEN_KEY);
   const headers = { ...(opts.headers || {}) };
   if (token) headers['Authorization'] = `Bearer ${token}`;
-  const res = await fetch(url, { ...opts, headers });
+  const res = await fetch(`${API}${url}`, { ...opts, headers });
   if (res.status === 401) window.dispatchEvent(new Event('hr:auth-expired'));
   return res;
 }
