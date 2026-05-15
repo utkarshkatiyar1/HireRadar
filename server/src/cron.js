@@ -1,9 +1,12 @@
 require('dotenv').config();
+require('./utils/logger'); // patch console first
 const express = require('express');
 const cors    = require('cors');
 const cron    = require('node-cron');
 const { connect } = require('./utils/db');
 const jobsRouter  = require('./routes/jobs');
+const authRouter  = require('./routes/auth');
+const adminRouter = require('./routes/admin');
 const scrape      = require('./index');
 
 const app  = express();
@@ -11,7 +14,9 @@ const PORT = process.env.PORT || 5000;
 
 app.use(cors());
 app.use(express.json());
+app.use('/auth', authRouter);
 app.use('/jobs', jobsRouter);
+app.use('/admin', adminRouter);
 
 (async () => {
   await connect();

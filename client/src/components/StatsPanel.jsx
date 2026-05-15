@@ -106,21 +106,36 @@ export default function StatsPanel({ stats }) {
 
       {/* ── Section: Top Companies ── */}
       {topCos.length > 0 && (
-        <section className="sp2-section">
+        <section className="sp2-section sp2-section-companies">
           <h2 className="sp2-heading">Companies Applied To</h2>
           <div className="sp2-companies">
-            {topCos.map(({ _id: co, count }) => (
-              <div key={co} className="sp2-co-row">
-                <span className="sp2-co-name">{co}</span>
-                <div className="sp2-co-track">
-                  <div
-                    className="sp2-co-bar"
-                    style={{ width: `${(count / topCos[0].count) * 100}%` }}
-                  />
+            {topCos.map(({ _id: co, count }, i) => {
+              const pct = (count / topCos[0].count) * 100;
+              const MEDALS = ['🥇', '🥈', '🥉'];
+              const AVATAR_BG = [
+                'linear-gradient(135deg,#8b5cf6,#6d28d9)',
+                'linear-gradient(135deg,#2dd4bf,#0d9488)',
+                'linear-gradient(135deg,#22c55e,#16a34a)',
+                'linear-gradient(135deg,#f59e0b,#d97706)',
+                'linear-gradient(135deg,#60a5fa,#3b82f6)',
+                'linear-gradient(135deg,#f87171,#ef4444)',
+                'linear-gradient(135deg,#a78bfa,#7c3aed)',
+                'linear-gradient(135deg,#34d399,#059669)',
+              ];
+              return (
+                <div key={co} className="sp2-co-row">
+                  <div className="sp2-co-fill" style={{ width: `${pct}%` }} />
+                  <span className="sp2-co-rank">
+                    {i < 3 ? MEDALS[i] : <span className="sp2-co-rank-n">#{i + 1}</span>}
+                  </span>
+                  <div className="sp2-co-avatar" style={{ background: AVATAR_BG[i % AVATAR_BG.length] }}>
+                    {co[0].toUpperCase()}
+                  </div>
+                  <span className="sp2-co-name">{co}</span>
+                  <span className="sp2-co-count">{count}</span>
                 </div>
-                <span className="sp2-co-count">{count}</span>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </section>
       )}

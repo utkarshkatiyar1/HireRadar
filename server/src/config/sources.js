@@ -51,6 +51,13 @@ const sources = [
     workdaySite:   'External_Career_Site',
   },
   {
+    company:       'Workday',
+    ats:           'workday',
+    workdayBase:   'https://workday.wd5.myworkdayjobs.com',
+    workdayTenant: 'workday',
+    workdaySite:   'Workday',
+  },
+  {
     company:       'CrowdStrike',
     ats:           'workday',
     workdayBase:   'https://crowdstrike.wd5.myworkdayjobs.com',
@@ -124,6 +131,8 @@ const sources = [
   { company: 'Arcesium',    ats: 'greenhouse', greenhouseToken: 'arcesiumllc'                },
   { company: 'Riot Games',  ats: 'greenhouse', greenhouseToken: 'riotgames'                  },
   { company: 'Optiver',     ats: 'greenhouse', greenhouseToken: 'optiverus'                  },
+  { company: 'Skyscanner',  ats: 'greenhouse', greenhouseToken: 'skyscanner'                 },
+  { company: 'Rubrik',      ats: 'greenhouse', greenhouseToken: 'rubrik'                     },
 
   // ── Ashby ─────────────────────────────────────────────────────────────────
   { company: 'Notion',     ats: 'ashby', ashbySlug: 'notion'     },
@@ -137,9 +146,11 @@ const sources = [
   { company: 'Snowflake',  ats: 'ashby', ashbySlug: 'snowflake'  },
   { company: 'Confluent',  ats: 'ashby', ashbySlug: 'confluent'  },
   { company: 'Redis',      ats: 'ashby', ashbySlug: 'redis'      },
+  { company: 'Plaid',      ats: 'ashby', ashbySlug: 'plaid'      },
 
   // ── SmartRecruiters ───────────────────────────────────────────────────────
   { company: 'Canva',      ats: 'smartrecruiters', smartrecruitersSlug: 'Canva'      },
+  { company: 'Grab',       ats: 'smartrecruiters', smartrecruitersSlug: 'grab'       },
   { company: 'Grafana',    ats: 'smartrecruiters', smartrecruitersSlug: 'Grafana'    },
   { company: 'Freshworks', ats: 'smartrecruiters', smartrecruitersSlug: 'Freshworks' },
   { company: 'HashiCorp',  ats: 'smartrecruiters', smartrecruitersSlug: 'HashiCorp'  },

@@ -2,9 +2,30 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import JobTable      from './components/JobTable';
 import StatsPanel    from './components/StatsPanel';
 import CompaniesPage from './components/CompaniesPage';
+import Leaderboard   from './components/Leaderboard';
+import AuthScreen    from './components/AuthScreen';
+import TerminalPage  from './components/TerminalPage';
+import { useAuth, authFetch } from './auth';
+
+const ADMIN_EMAIL = 'utkarshkatiyar688@gmail.com';
+
+const fmtRel = (d) => {
+  if (!d) return null;
+  const s = Math.max(0, Math.floor((Date.now() - new Date(d).getTime()) / 1000));
+  if (s < 10)    return 'just now';
+  if (s < 60)    return `${s}s ago`;
+  if (s < 3600)  return `${Math.floor(s / 60)}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  return `${Math.floor(s / 86400)}d ago`;
+};
 
 export default function App() {
-  const [page, setPage] = useState('jobs'); // 'jobs' | 'progress' | 'companies'
+  const { token, user, logout } = useAuth();
+
+  const isAdmin = user?.email === ADMIN_EMAIL;
+
+  const [page, setPage] = useState('jobs'); // 'jobs' | 'progress' | 'companies' | 'leaderboard' | 'terminal'
+  const [, forceTick]   = useState(0);
 
   const [jobs, setJobs]         = useState([]);
   const [loading, setLoading]   = useState(true);
@@ -17,13 +38,14 @@ export default function App() {
   const [companyFilter, setCompanyFilter] = useState('all');
   const [currentPage, setCurrentPage]     = useState(1);
   const [smartFilter, setSmartFilter]     = useState(true);
+  const [scraping, setScraping]           = useState(false);
 
   const PAGE_SIZE = 50;
 
   const fetchJobs = useCallback(async () => {
     try {
       const url = smartFilter ? '/jobs' : '/jobs?raw=1';
-      const res = await fetch(url);
+      const res = await authFetch(url);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setJobs(await res.json());
       setLastSync(new Date());
@@ -37,21 +59,29 @@ export default function App() {
 
   const fetchStats = useCallback(async () => {
     try {
-      const res = await fetch('/jobs/stats');
+      const res = await authFetch('/jobs/stats');
       if (res.ok) setStats(await res.json());
     } catch {}
   }, []);
 
   useEffect(() => {
+    if (!token) return;
+    setLoading(true);
     fetchJobs();
     fetchStats();
     const id = setInterval(() => { fetchJobs(); fetchStats(); }, 60_000);
     return () => clearInterval(id);
-  }, [fetchJobs, fetchStats]);
+  }, [token, fetchJobs, fetchStats]);
+
+  // Tick the relative-time label in the sync badge every 30s.
+  useEffect(() => {
+    const id = setInterval(() => forceTick(n => n + 1), 30_000);
+    return () => clearInterval(id);
+  }, []);
 
   const markApplied = async (id) => {
     try {
-      await fetch(`/jobs/${id}/apply`, { method: 'PATCH' });
+      await authFetch(`/jobs/${id}/apply`, { method: 'PATCH' });
       setJobs(prev => prev.map(j => j._id === id ? { ...j, applied: true, appliedAt: new Date().toISOString() } : j));
       fetchStats();
     } catch (e) {
@@ -61,10 +91,41 @@ export default function App() {
 
   const dismissJob = async (id) => {
     try {
-      await fetch(`/jobs/${id}/dismiss`, { method: 'PATCH' });
+      await authFetch(`/jobs/${id}/dismiss`, { method: 'PATCH' });
       setJobs(prev => prev.filter(j => j._id !== id));
     } catch (e) {
       console.error('dismissJob:', e);
+    }
+  };
+
+  const triggerScrape = async () => {
+    if (scraping) return;
+    setScraping(true);
+    try {
+      const res = await authFetch('/admin/scrape', { method: 'POST' });
+      if (!res.ok) {
+        const { error } = await res.json();
+        alert(error || 'Scrape failed to start');
+      }
+    } catch (e) {
+      console.error('triggerScrape:', e);
+    } finally {
+      // Poll until scrape finishes, then refetch jobs
+      const poll = setInterval(async () => {
+        const r = await authFetch('/admin/scrape');
+        if (r.ok) {
+          const { running } = await r.json();
+          if (!running) {
+            clearInterval(poll);
+            setScraping(false);
+            fetchJobs();
+            fetchStats();
+          }
+        } else {
+          clearInterval(poll);
+          setScraping(false);
+        }
+      }, 3000);
     }
   };
 
@@ -76,18 +137,14 @@ export default function App() {
     [jobs]
   );
 
-  const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
-
   const displayed = useMemo(() => {
-    const q     = search.trim().toLowerCase();
-    const since = new Date(Date.now() - THREE_DAYS_MS);
+    const q = search.trim().toLowerCase();
     return jobs
       .filter(j =>
         statusFilter === 'applied' ? j.applied :
         statusFilter === 'pending' ? !j.applied :
         true
       )
-      .filter(j => !smartFilter || statusFilter === 'applied' || new Date(j.firstSeen) >= since)
       .filter(j => companyFilter === 'all' || j.company === companyFilter)
       .filter(j =>
         !q ||
@@ -102,56 +159,52 @@ export default function App() {
   const totalPages = Math.max(1, Math.ceil(displayed.length / PAGE_SIZE));
   const paginated  = displayed.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
+  if (!token) return <AuthScreen />;
+
   return (
     <>
       {/* ── Header ── */}
       <header className="header">
         <div className="header-logo">
           <span className="logo-text">HIRE·RADAR</span>
-          <span className="logo-sub">React · Frontend · MERN &nbsp;·&nbsp; India / Remote &nbsp;·&nbsp; 0–2 yrs</span>
         </div>
-        <div className="header-right">
-          <nav className="page-tabs">
-            <button
-              className={`page-tab${page === 'jobs' ? ' active' : ''}`}
-              onClick={() => setPage('jobs')}
-            >
-              Jobs
-              {pending > 0 && <span className="page-tab-count">{pending}</span>}
+
+        <nav className="page-tabs">
+          <button className={`page-tab${page === 'jobs' ? ' active' : ''}`} onClick={() => setPage('jobs')}>
+            Jobs
+            {pending > 0 && <span className="page-tab-count">{pending}</span>}
+          </button>
+          <button className={`page-tab${page === 'progress' ? ' active teal' : ''}`} onClick={() => setPage('progress')}>
+            Progress
+            {applied > 0 && <span className="page-tab-count teal">{applied}</span>}
+          </button>
+          <button className={`page-tab${page === 'companies' ? ' active' : ''}`} onClick={() => setPage('companies')}>
+            Companies
+          </button>
+          <button className={`page-tab${page === 'leaderboard' ? ' active' : ''}`} onClick={() => setPage('leaderboard')}>
+            Leaderboard
+          </button>
+          {isAdmin && (
+            <button className={`page-tab terminal-tab${page === 'terminal' ? ' active' : ''}`} onClick={() => setPage('terminal')}>
+              Terminal
             </button>
-            <button
-              className={`page-tab${page === 'progress' ? ' active teal' : ''}`}
-              onClick={() => setPage('progress')}
-            >
-              My Progress
-              {applied > 0 && <span className="page-tab-count">{applied}</span>}
-            </button>
-            <button
-              className={`page-tab${page === 'companies' ? ' active' : ''}`}
-              onClick={() => setPage('companies')}
-            >
-              Companies
-            </button>
-          </nav>
-          <div className="header-stats">
-            <div className="stat-card">
-              <span className="stat-n">{jobs.length}</span>
-              <span className="stat-l">Total</span>
+          )}
+        </nav>
+
+        <div className="header-controls">
+          {lastSync && (
+            <span className="sync-badge" title={lastSync.toLocaleString()}>
+              <span className="live-dot" />
+              {fmtRel(lastSync)}
+            </span>
+          )}
+          {user && (
+            <div className="user-chip" title={user.email}>
+              <span className="user-avatar">{user.name[0].toUpperCase()}</span>
+              <span className="user-name">{user.name}</span>
+              <button className="user-logout" onClick={logout}>Log out</button>
             </div>
-            <div className="stat-card">
-              <span className="stat-n orange">{pending}</span>
-              <span className="stat-l">Pending</span>
-            </div>
-            <div className="stat-card">
-              <span className="stat-n teal">{applied}</span>
-              <span className="stat-l">Applied</span>
-            </div>
-            {lastSync && (
-              <span className="sync-badge">
-                Synced {lastSync.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
-              </span>
-            )}
-          </div>
+          )}
         </div>
       </header>
 
@@ -211,6 +264,24 @@ export default function App() {
               <span className="result-count">
                 {displayed.length} result{displayed.length !== 1 ? 's' : ''}
               </span>
+              <button
+                className={`refresh-btn${loading ? ' spinning' : ''}`}
+                onClick={() => { fetchJobs(); fetchStats(); }}
+                disabled={loading}
+                title="Refetch jobs from server"
+              >
+                ↻
+              </button>
+              {isAdmin && (
+                <button
+                  className={`scrape-btn${scraping ? ' running' : ''}`}
+                  onClick={triggerScrape}
+                  disabled={scraping}
+                  title="Trigger a full scrape run on the server"
+                >
+                  {scraping ? 'Scraping…' : '⚡ Run Scrape'}
+                </button>
+              )}
             </div>
           </div>
 
@@ -267,6 +338,20 @@ export default function App() {
       {page === 'companies' && (
         <main>
           <CompaniesPage />
+        </main>
+      )}
+
+      {/* ── Leaderboard Page ── */}
+      {page === 'leaderboard' && (
+        <main>
+          <Leaderboard currentUserId={user?.id} />
+        </main>
+      )}
+
+      {/* ── Terminal Page (admin only) ── */}
+      {page === 'terminal' && isAdmin && (
+        <main className="terminal-main">
+          <TerminalPage />
         </main>
       )}
 
