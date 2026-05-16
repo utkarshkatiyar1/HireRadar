@@ -47,6 +47,21 @@ userJobStateSchema.index({ userId: 1, jobId: 1 }, { unique: true });
 
 const UserJobState = mongoose.model('UserJobState', userJobStateSchema);
 
+const userPrefsSchema = new mongoose.Schema(
+  {
+    userId:           { type: mongoose.Schema.Types.ObjectId, ref: 'User', unique: true, required: true },
+    locationAllow:    [String],
+    seniorityExclude: [String],
+    frontendSignals:  [String],
+    juniorSignals:    [String],
+    negativeSignals:  [String],
+    scoreThreshold:   { type: Number, default: 0 },
+  },
+  { timestamps: true }
+);
+
+const UserPrefs = mongoose.model('UserPrefs', userPrefsSchema);
+
 const connect = () => mongoose.connect(process.env.MONGO_URI);
 
-module.exports = { Job, User, UserJobState, connect };
+module.exports = { Job, User, UserJobState, UserPrefs, connect };

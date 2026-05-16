@@ -1,6 +1,6 @@
 const router = require('express').Router();
 const mongoose = require('mongoose');
-const { Job, User, UserJobState } = require('../utils/db');
+const { Job, User, UserJobState, UserPrefs } = require('../utils/db');
 const sources = require('../config/sources');
 const { isLocationOk, isSenior, scoreJob } = require('../utils/filter');
 const { requireAuth } = require('../middleware/auth');
@@ -34,10 +34,13 @@ router.get('/', requireAuth, async (req, res) => {
 
     if (req.query.raw === '1') return res.json(withState);
 
+    const prefs = (await UserPrefs.findOne({ userId }).lean()) ?? {};
+    const threshold = prefs.scoreThreshold ?? 0;
+
     const jobs = withState
-      .filter(j => isLocationOk(j.location) && !isSenior(j.title))
-      .map(j => ({ ...j, score: scoreJob(j) }))
-      .filter(j => j.score >= 0)
+      .filter(j => isLocationOk(j.location, prefs) && !isSenior(j.title, prefs))
+      .map(j => ({ ...j, score: scoreJob(j, prefs) }))
+      .filter(j => j.score >= threshold)
       .sort((a, b) => b.score - a.score || new Date(b.firstSeen) - new Date(a.firstSeen));
     res.json(jobs);
   } catch (e) {

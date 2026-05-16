@@ -5,6 +5,7 @@ import CompaniesPage from './components/CompaniesPage';
 import Leaderboard   from './components/Leaderboard';
 import AuthScreen    from './components/AuthScreen';
 import TerminalPage  from './components/TerminalPage';
+import ProfilePage   from './components/ProfilePage';
 import { useAuth, authFetch } from './auth';
 
 const ADMIN_EMAIL = 'utkarshkatiyar688@gmail.com';
@@ -24,7 +25,7 @@ export default function App() {
 
   const isAdmin = user?.email === ADMIN_EMAIL;
 
-  const [page, setPage] = useState('jobs'); // 'jobs' | 'progress' | 'companies' | 'leaderboard' | 'terminal'
+  const [page, setPage] = useState('jobs'); // 'jobs' | 'progress' | 'companies' | 'leaderboard' | 'terminal' | 'profile'
   const [, forceTick]   = useState(0);
 
   const [jobs, setJobs]         = useState([]);
@@ -199,11 +200,13 @@ export default function App() {
             </span>
           )}
           {user && (
-            <div className="user-chip" title={user.email}>
+            <button
+              className={`user-chip${page === 'profile' ? ' active' : ''}`}
+              onClick={() => setPage('profile')}
+              title={`${user.name} — Profile & Settings`}
+            >
               <span className="user-avatar">{user.name[0].toUpperCase()}</span>
-              <span className="user-name">{user.name}</span>
-              <button className="user-logout" onClick={logout}>Log out</button>
-            </div>
+            </button>
           )}
         </div>
       </header>
@@ -345,6 +348,13 @@ export default function App() {
       {page === 'leaderboard' && (
         <main>
           <Leaderboard currentUserId={user?.id} />
+        </main>
+      )}
+
+      {/* ── Profile Page ── */}
+      {page === 'profile' && (
+        <main>
+          <ProfilePage user={user} />
         </main>
       )}
 

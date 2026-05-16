@@ -5,7 +5,11 @@ const API = import.meta.env.VITE_API_URL ?? '';
 
 const LEVEL_COLOR = { INFO: '#4ade80', WARN: '#facc15', ERROR: '#f87171' };
 
-const fmt = (iso) => iso.replace('T', ' ').slice(0, 23); // "2026-05-15 17:48:27.963"
+// Convert UTC → IST (UTC+5:30) for display
+const fmt = (iso) => {
+  const ist = new Date(new Date(iso).getTime() + 5.5 * 60 * 60 * 1000);
+  return ist.toISOString().replace('T', ' ').slice(0, 23);
+};
 
 export default function TerminalPage() {
   const { token } = useAuth();

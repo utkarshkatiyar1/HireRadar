@@ -6,8 +6,9 @@ export default defineConfig({
   server: {
     port: 3000,
     proxy: {
-      '/jobs':  { target: 'http://localhost:5000', changeOrigin: true },
-      '/auth':  { target: 'http://localhost:5000', changeOrigin: true },
+      '/jobs':    { target: 'http://localhost:5000', changeOrigin: true },
+      '/auth':    { target: 'http://localhost:5000', changeOrigin: true },
+      '/profile': { target: 'http://localhost:5000', changeOrigin: true },
       '/admin': {
         target: 'http://localhost:5000',
         changeOrigin: true,
