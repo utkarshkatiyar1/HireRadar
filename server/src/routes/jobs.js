@@ -115,20 +115,29 @@ router.get('/leaderboard', requireAuth, async (_req, res) => {
     const day0  = new Date(now); day0.setUTCHours(0, 0, 0, 0);
     const week0 = new Date(day0); week0.setUTCDate(day0.getUTCDate() - 6);
 
-    const rows = await UserJobState.aggregate([
-      { $match: { applied: true } },
-      { $group: {
-          _id: '$userId',
-          total:    { $sum: 1 },
-          today:    { $sum: { $cond: [{ $gte: ['$appliedAt', day0] },  1, 0] } },
-          thisWeek: { $sum: { $cond: [{ $gte: ['$appliedAt', week0] }, 1, 0] } },
-      }},
-      { $lookup: { from: 'users', localField: '_id', foreignField: '_id', as: 'user' } },
-      { $unwind: '$user' },
-      { $project: { _id: 0, userId: '$_id', name: '$user.name', total: 1, today: 1, thisWeek: 1 } },
-      { $sort: { total: -1, thisWeek: -1 } },
-      { $limit: 50 },
+    const [allUsers, stats] = await Promise.all([
+      User.find({}).select('_id name').lean(),
+      UserJobState.aggregate([
+        { $match: { applied: true } },
+        { $group: {
+            _id:      '$userId',
+            total:    { $sum: 1 },
+            today:    { $sum: { $cond: [{ $gte: ['$appliedAt', day0] },  1, 0] } },
+            thisWeek: { $sum: { $cond: [{ $gte: ['$appliedAt', week0] }, 1, 0] } },
+        }},
+      ]),
     ]);
+
+    const byUser = new Map(stats.map(s => [String(s._id), s]));
+
+    const rows = allUsers
+      .map(u => {
+        const s = byUser.get(String(u._id)) ?? { total: 0, today: 0, thisWeek: 0 };
+        return { userId: u._id, name: u.name, total: s.total, today: s.today, thisWeek: s.thisWeek };
+      })
+      .sort((a, b) => b.total - a.total || b.thisWeek - a.thisWeek)
+      .slice(0, 50);
+
     res.json(rows);
   } catch (e) {
     res.status(500).json({ error: e.message });

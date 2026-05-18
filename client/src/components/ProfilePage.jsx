@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { authFetch, useAuth } from '../auth';
 
 const DEFAULTS = {
@@ -53,28 +53,35 @@ const DEFAULTS = {
 
 function TagEditor({ tags, onChange, color, placeholder }) {
   const [input, setInput] = useState('');
+  const inputRef = useRef(null);
 
   const add = () => {
     const v = input.trim().toLowerCase();
     if (!v || tags.includes(v)) { setInput(''); return; }
     onChange([...tags, v]);
     setInput('');
+    inputRef.current?.focus();
   };
 
   const remove = (tag) => onChange(tags.filter(t => t !== tag));
 
   return (
     <div className="tag-editor">
-      <div className="tag-list">
-        {tags.map(tag => (
-          <span key={tag} className="tag-pill" style={{ '--pill-color': color }}>
-            {tag}
-            <button className="tag-remove" onClick={() => remove(tag)} title="Remove">×</button>
-          </span>
-        ))}
-      </div>
+      {tags.length > 0 && (
+        <div className="tag-list-wrap">
+          <div className="tag-list">
+            {tags.map(tag => (
+              <span key={tag} className="tag-pill" style={{ '--pill-color': color }}>
+                {tag}
+                <button className="tag-remove" onClick={() => remove(tag)} title="Remove">×</button>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
       <div className="tag-input-row">
         <input
+          ref={inputRef}
           className="tag-input"
           value={input}
           onChange={e => setInput(e.target.value)}
@@ -82,6 +89,11 @@ function TagEditor({ tags, onChange, color, placeholder }) {
           placeholder={placeholder}
         />
         <button className="tag-add-btn" onClick={add}>Add</button>
+        {tags.length > 0 && (
+          <button className="tag-clear-btn" onClick={() => onChange([])} title="Clear all">
+            Clear all
+          </button>
+        )}
       </div>
     </div>
   );
@@ -92,60 +104,77 @@ const SECTIONS = [
     key: 'locationAllow',
     icon: '📍',
     title: 'Location Allowlist',
-    desc: 'Jobs must match at least one of these locations. Empty = all locations pass.',
+    badge: null,
+    badgeColor: null,
+    desc: 'Jobs must contain at least one of these to pass. Empty list = all locations allowed.',
     color: '#60a5fa',
-    placeholder: 'e.g. pune, remote…',
+    placeholder: 'Add city or keyword, press Enter…',
   },
   {
     key: 'seniorityExclude',
     icon: '🚫',
     title: 'Title Exclusions',
-    desc: 'Jobs with these words in the title are hard-dropped regardless of score.',
+    badge: 'hard drop',
+    badgeColor: '#f87171',
+    desc: 'Any job whose title contains one of these is removed before scoring.',
     color: '#f87171',
-    placeholder: 'e.g. senior, manager…',
+    placeholder: 'Add title word to block, press Enter…',
   },
   {
     key: 'frontendSignals',
     icon: '⚡',
     title: 'Boost Keywords',
-    badge: '+3 pts each',
-    desc: 'Matching jobs get ranked higher. Add tech stack you want to see.',
+    badge: '+3 pts',
+    badgeColor: '#4ade80',
+    desc: 'Each match adds 3 points. Use for your target stack.',
     color: '#4ade80',
-    placeholder: 'e.g. react, typescript…',
+    placeholder: 'Add tech keyword, press Enter…',
   },
   {
     key: 'juniorSignals',
     icon: '🌱',
     title: 'Junior Signals',
-    badge: '+2 pts each',
-    desc: 'Entry-level and new-grad keywords that bump these roles up.',
+    badge: '+2 pts',
+    badgeColor: '#a78bfa',
+    desc: 'Each match adds 2 points. Entry-level and new-grad terms.',
     color: '#a78bfa',
-    placeholder: 'e.g. junior, entry level…',
+    placeholder: 'Add level keyword, press Enter…',
   },
   {
     key: 'negativeSignals',
     icon: '⬇️',
     title: 'Suppress Keywords',
-    badge: '−3 pts each',
-    desc: 'Jobs matching these are penalised — fall below threshold and disappear.',
+    badge: '−3 pts',
+    badgeColor: '#fb923c',
+    desc: 'Each match subtracts 3 points. Roles you want pushed down.',
     color: '#fb923c',
-    placeholder: 'e.g. backend, devops…',
+    placeholder: 'Add keyword to suppress, press Enter…',
   },
 ];
 
 export default function ProfilePage({ user }) {
   const { logout } = useAuth();
-  const [prefs, setPrefs]   = useState(null);
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved]   = useState(false);
-  const [error, setError]   = useState(null);
+  const [prefs, setPrefs]       = useState(null);
+  const [savedPrefs, setSavedPrefs] = useState(null);
+  const [saving, setSaving]     = useState(false);
+  const [saved, setSaved]       = useState(false);
+  const [error, setError]       = useState(null);
 
   useEffect(() => {
     authFetch('/profile')
       .then(r => r.json())
-      .then(data => setPrefs(data.prefs))
-      .catch(() => setPrefs({ ...DEFAULTS }));
+      .then(data => {
+        setPrefs(data.prefs);
+        setSavedPrefs(data.prefs);
+      })
+      .catch(() => {
+        setPrefs({ ...DEFAULTS });
+        setSavedPrefs({ ...DEFAULTS });
+      });
   }, []);
+
+  const isDirty = prefs && savedPrefs &&
+    JSON.stringify(prefs) !== JSON.stringify(savedPrefs);
 
   const set = (key) => (val) => setPrefs(p => ({ ...p, [key]: val }));
 
@@ -159,6 +188,7 @@ export default function ProfilePage({ user }) {
         body: JSON.stringify(prefs),
       });
       if (res.ok) {
+        setSavedPrefs(prefs);
         setSaved(true);
         setTimeout(() => setSaved(false), 3000);
       } else {
@@ -178,52 +208,66 @@ export default function ProfilePage({ user }) {
   return (
     <div className="profile-page">
 
-      {/* User card */}
+      {/* ── User card ── */}
       <div className="profile-user-card">
-        <div className="profile-avatar">
+        <div className="profile-avatar-lg">
           {(user?.name || '?')[0].toUpperCase()}
         </div>
         <div className="profile-user-info">
           <div className="profile-name">{user?.name}</div>
           <div className="profile-email">{user?.email}</div>
         </div>
+        <button className="profile-logout-btn" onClick={logout}>Log out</button>
       </div>
 
-      <div className="profile-divider" />
-      <p className="profile-intro">
-        Smart Filter uses these rules to rank and filter jobs. Changes apply the next time jobs load.
-      </p>
+      {/* ── Section label ── */}
+      <div className="profile-section-label">
+        <span>Smart Filter Rules</span>
+        <span className="profile-section-label-sub">
+          Controls what jobs appear when Smart Filter is ON · saved per account
+        </span>
+      </div>
 
-      {/* Filter sections */}
-      {SECTIONS.map(({ key, icon, title, badge, desc, color, placeholder }) => (
-        <div className="profile-section" key={key}>
-          <div className="profile-section-header">
-            <span className="profile-section-icon">{icon}</span>
-            <div className="profile-section-meta">
-              <div className="profile-section-title">
-                {title}
-                {badge && <span className="profile-badge" style={{ color }}>{badge}</span>}
+      {/* ── Filter sections ── */}
+      {SECTIONS.map(({ key, icon, title, badge, badgeColor, desc, color, placeholder }) => {
+        const count = prefs[key]?.length ?? 0;
+        return (
+          <div className="profile-section" key={key}>
+            <div className="profile-section-top">
+              <span className="profile-section-icon">{icon}</span>
+              <div className="profile-section-meta">
+                <div className="profile-section-title">
+                  {title}
+                  {badge && (
+                    <span className="profile-badge" style={{ color: badgeColor, borderColor: `${badgeColor}40`, background: `${badgeColor}12` }}>
+                      {badge}
+                    </span>
+                  )}
+                </div>
+                <div className="profile-section-desc">{desc}</div>
               </div>
-              <div className="profile-section-desc">{desc}</div>
+              <span className="profile-tag-count" style={{ color }}>
+                {count}
+              </span>
             </div>
+            <TagEditor
+              tags={prefs[key] ?? []}
+              onChange={set(key)}
+              color={color}
+              placeholder={placeholder}
+            />
           </div>
-          <TagEditor
-            tags={prefs[key] ?? []}
-            onChange={set(key)}
-            color={color}
-            placeholder={placeholder}
-          />
-        </div>
-      ))}
+        );
+      })}
 
-      {/* Score threshold */}
+      {/* ── Score threshold ── */}
       <div className="profile-section">
-        <div className="profile-section-header">
+        <div className="profile-section-top">
           <span className="profile-section-icon">🎯</span>
           <div className="profile-section-meta">
             <div className="profile-section-title">Score Threshold</div>
             <div className="profile-section-desc">
-              Jobs scoring below this are hidden when Smart Filter is ON. Default 0.
+              Minimum score for a job to appear with Smart Filter ON.
             </div>
           </div>
         </div>
@@ -238,31 +282,29 @@ export default function ProfilePage({ user }) {
           />
           <span className="threshold-hint">
             {(prefs.scoreThreshold ?? 0) <= 0
-              ? 'All non-excluded jobs shown'
-              : `Only jobs scoring ≥ ${prefs.scoreThreshold} shown`}
+              ? 'Showing all non-excluded jobs'
+              : `Hiding jobs scoring below ${prefs.scoreThreshold}`}
           </span>
         </div>
       </div>
 
-      {/* Actions */}
-      {error && <p className="profile-error">{error}</p>}
-      <div className="profile-actions">
-        <button className="profile-logout-btn" onClick={logout}>
-          Log out
-        </button>
-        <div className="profile-actions-right">
-          <button className="profile-reset-btn" onClick={reset}>
-            Reset to Defaults
-          </button>
+      {/* ── Sticky save bar ── */}
+      <div className={`profile-save-bar${isDirty ? ' dirty' : ''}`}>
+        {error && <span className="profile-error">{error}</span>}
+        {isDirty && !error && <span className="profile-unsaved">Unsaved changes</span>}
+        {!isDirty && !error && <span className="profile-saved-note">{saved ? '✓ Saved' : 'All changes saved'}</span>}
+        <div className="profile-save-bar-actions">
+          <button className="profile-reset-btn" onClick={reset}>Reset to Defaults</button>
           <button
             className={`profile-save-btn${saved ? ' saved' : ''}`}
             onClick={save}
-            disabled={saving}
+            disabled={saving || !isDirty}
           >
-            {saving ? 'Saving…' : saved ? '✓ Saved' : 'Save Settings'}
+            {saving ? 'Saving…' : 'Save'}
           </button>
         </div>
       </div>
+
     </div>
   );
 }
