@@ -4,7 +4,7 @@ const normalize = require('../../utils/normalize');
 module.exports = async (src) => {
   const { data } = await axios.post(
     'https://swiggy.mynexthire.com/employer/careers/reqlist/get',
-    { limit: 500, offset: 0 },
+    { limit: 500, offset: 0, source: 'careers' },
     {
       headers: {
         'Content-Type': 'application/json',

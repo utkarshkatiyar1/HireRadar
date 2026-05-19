@@ -33,7 +33,7 @@ const sources = [
   { company: 'Slice',     ats: 'custom-api', scraperModule: 'slice'     },
   { company: 'Swiggy',    ats: 'custom-api', scraperModule: 'swiggy'    },
   { company: 'Juspay',    ats: 'custom-api', scraperModule: 'juspay'    },
-  { company: 'Darwinbox', ats: 'custom-api', scraperModule: 'darwinbox' },
+  { company: 'Darwinbox', ats: 'playwright',  scraperModule: 'darwinbox' },
 
   // ── Playwright (JS-rendered SPA) ──────────────────────────────────────────
   { company: 'Accenture', ats: 'playwright', scraperModule: 'accenture' },
