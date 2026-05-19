@@ -31,6 +31,9 @@ const sources = [
   // ── Custom API ────────────────────────────────────────────────────────────
   { company: 'Amazon',    ats: 'custom-api', scraperModule: 'amazon'    },
   { company: 'Slice',     ats: 'custom-api', scraperModule: 'slice'     },
+  { company: 'Swiggy',    ats: 'custom-api', scraperModule: 'swiggy'    },
+  { company: 'Juspay',    ats: 'custom-api', scraperModule: 'juspay'    },
+  { company: 'Darwinbox', ats: 'custom-api', scraperModule: 'darwinbox' },
 
   // ── Playwright (JS-rendered SPA) ──────────────────────────────────────────
   { company: 'Accenture', ats: 'playwright', scraperModule: 'accenture' },
@@ -85,6 +88,41 @@ const sources = [
     workdayTenant: 'nvidia',
     workdaySite:   'NVIDIAExternalCareerSite',
   },
+  {
+    company:       'BrowserStack',
+    ats:           'workday',
+    workdayBase:   'https://browserstack.wd3.myworkdayjobs.com',
+    workdayTenant: 'browserstack',
+    workdaySite:   'External',
+  },
+  {
+    company:       'Siemens Healthineers',
+    ats:           'workday',
+    workdayBase:   'https://onehealthineers.wd3.myworkdayjobs.com',
+    workdayTenant: 'onehealthineers',
+    workdaySite:   'SHSJB',
+  },
+  {
+    company:       'Micron',
+    ats:           'workday',
+    workdayBase:   'https://micron.wd1.myworkdayjobs.com',
+    workdayTenant: 'micron',
+    workdaySite:   'External',
+  },
+  {
+    company:       'Target',
+    ats:           'workday',
+    workdayBase:   'https://target.wd5.myworkdayjobs.com',
+    workdayTenant: 'target',
+    workdaySite:   'targetcareers',
+  },
+  {
+    company:       'Walmart Global Tech',
+    ats:           'workday',
+    workdayBase:   'https://walmart.wd5.myworkdayjobs.com',
+    workdayTenant: 'walmart',
+    workdaySite:   'WalmartExternal',
+  },
 
   // ── Greenhouse ────────────────────────────────────────────────────────────
   { company: 'Postman',      ats: 'greenhouse', greenhouseToken: 'postman'                    },
@@ -133,6 +171,18 @@ const sources = [
   { company: 'Optiver',     ats: 'greenhouse', greenhouseToken: 'optiverus'                  },
   { company: 'Skyscanner',  ats: 'greenhouse', greenhouseToken: 'skyscanner'                 },
   { company: 'Rubrik',      ats: 'greenhouse', greenhouseToken: 'rubrik'                     },
+  { company: 'Chargebee',   ats: 'greenhouse', greenhouseToken: 'chargebee'                  },
+  { company: 'Twitch',      ats: 'greenhouse', greenhouseToken: 'twitch'                     },
+  { company: 'Typeform',    ats: 'greenhouse', greenhouseToken: 'typeform'                    },
+  { company: 'Contentful',  ats: 'greenhouse', greenhouseToken: 'contentful'                  },
+  { company: 'Automattic',  ats: 'greenhouse', greenhouseToken: 'automatticcareers'           },
+  { company: 'Box',         ats: 'greenhouse', greenhouseToken: 'boxinc'                      },
+  { company: 'dbt Labs',    ats: 'greenhouse', greenhouseToken: 'dbtlabsinc'                  },
+  { company: 'Fastly',      ats: 'greenhouse', greenhouseToken: 'fastly'                      },
+  { company: 'Gusto',       ats: 'greenhouse', greenhouseToken: 'gusto'                       },
+  { company: 'Remote',      ats: 'greenhouse', greenhouseToken: 'remotecom'                   },
+  { company: 'Calendly',    ats: 'greenhouse', greenhouseToken: 'calendly'                    },
+  { company: 'Culture Amp', ats: 'greenhouse', greenhouseToken: 'cultureamp'                  },
 
   // ── Ashby ─────────────────────────────────────────────────────────────────
   { company: 'Notion',     ats: 'ashby', ashbySlug: 'notion'     },
@@ -147,19 +197,33 @@ const sources = [
   { company: 'Confluent',  ats: 'ashby', ashbySlug: 'confluent'  },
   { company: 'Redis',      ats: 'ashby', ashbySlug: 'redis'      },
   { company: 'Plaid',      ats: 'ashby', ashbySlug: 'plaid'      },
+  { company: 'PostHog',   ats: 'ashby', ashbySlug: 'posthog'   },
+  { company: 'Resend',    ats: 'ashby', ashbySlug: 'resend'     },
+  { company: 'Dovetail',  ats: 'ashby', ashbySlug: 'dovetail'   },
+  { company: 'Railway',   ats: 'ashby', ashbySlug: 'railway'    },
+  { company: 'Render',    ats: 'ashby', ashbySlug: 'render'     },
+  { company: 'Jellyfish', ats: 'ashby', ashbySlug: 'jellyfish'  },
+  { company: 'Vanta',     ats: 'ashby', ashbySlug: 'vanta'      },
 
   // ── SmartRecruiters ───────────────────────────────────────────────────────
-  { company: 'Canva',      ats: 'smartrecruiters', smartrecruitersSlug: 'Canva'      },
-  { company: 'Grab',       ats: 'smartrecruiters', smartrecruitersSlug: 'grab'       },
-  { company: 'Grafana',    ats: 'smartrecruiters', smartrecruitersSlug: 'Grafana'    },
-  { company: 'Freshworks', ats: 'smartrecruiters', smartrecruitersSlug: 'Freshworks' },
-  { company: 'HashiCorp',  ats: 'smartrecruiters', smartrecruitersSlug: 'HashiCorp'  },
+  { company: 'Canva',         ats: 'smartrecruiters', smartrecruitersSlug: 'Canva'       },
+  { company: 'Zomato',        ats: 'smartrecruiters', smartrecruitersSlug: 'Zomato1'     },
+  { company: 'Grab',          ats: 'smartrecruiters', smartrecruitersSlug: 'grab'        },
+  { company: 'Grafana',       ats: 'smartrecruiters', smartrecruitersSlug: 'Grafana'     },
+  { company: 'Freshworks',    ats: 'smartrecruiters', smartrecruitersSlug: 'Freshworks'  },
+  { company: 'HashiCorp',     ats: 'smartrecruiters', smartrecruitersSlug: 'HashiCorp'   },
+  { company: 'Thoughtworks',  ats: 'smartrecruiters', smartrecruitersSlug: 'Thoughtworks'},
+  { company: 'OLX Group',     ats: 'smartrecruiters', smartrecruitersSlug: 'olx'         },
+  { company: 'Nagarro',       ats: 'smartrecruiters', smartrecruitersSlug: 'Nagarro'     },
+  { company: 'Mambu',         ats: 'smartrecruiters', smartrecruitersSlug: 'Mambu'       },
+  { company: 'ServiceNow',    ats: 'smartrecruiters', smartrecruitersSlug: 'ServiceNow'  },
 
   // ── Lever ─────────────────────────────────────────────────────────────────
   { company: 'Meesho',    ats: 'lever', leverToken: 'meesho'    },
   { company: 'CRED',      ats: 'lever', leverToken: 'cred'      },
   { company: 'Spotify',   ats: 'lever', leverToken: 'spotify'   },
   { company: 'Palantir',  ats: 'lever', leverToken: 'palantir'  },
+  { company: 'Paytm',     ats: 'lever', leverToken: 'paytm'     },
 
   // ── Taleo SSR ─────────────────────────────────────────────────────────────
   {
@@ -172,6 +236,30 @@ const sources = [
       title:    'h3 a',
       location: '.article__header__text__subtitle span:last-child',
       link:     'h3 a',
+    },
+  },
+  {
+    company:    'Intel',
+    ats:        'taleo-ssr',
+    baseUrl:    'https://jobs.intel.com',
+    searchPath: '/job-search-results/?from={offset}',
+    selectors:  {
+      card:     '.tile',
+      title:    '.job-title',
+      location: '.job-location',
+      link:     'a',
+    },
+  },
+  {
+    company:    'SAP Labs',
+    ats:        'taleo-ssr',
+    baseUrl:    'https://jobs.sap.com',
+    searchPath: '/search/?q=&startrow={offset}',
+    selectors:  {
+      card:     '.data-table tbody tr',
+      title:    '.jobTitle-link',
+      location: '.jobLocation',
+      link:     '.jobTitle-link',
     },
   },
 
