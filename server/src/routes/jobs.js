@@ -75,7 +75,12 @@ router.get('/stats', requireAuth, async (req, res) => {
       { $match: { userId, applied: true } },
       { $lookup: { from: 'jobs', localField: 'jobId', foreignField: '_id', as: 'job' } },
       { $unwind: '$job' },
-      { $group: { _id: '$job.company', count: { $sum: 1 } } },
+      { $group: {
+          _id: '$job.company',
+          count: { $sum: 1 },
+          lastApplied: { $max: '$appliedAt' },
+          roles: { $addToSet: '$job.title' },
+      }},
       { $sort: { count: -1 } },
       { $limit: 8 },
     ]);

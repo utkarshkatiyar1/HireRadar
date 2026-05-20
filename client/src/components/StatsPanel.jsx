@@ -109,7 +109,7 @@ export default function StatsPanel({ stats }) {
         <section className="sp2-section sp2-section-companies">
           <h2 className="sp2-heading">Companies Applied To</h2>
           <div className="sp2-companies">
-            {topCos.map(({ _id: co, count }, i) => {
+            {topCos.map(({ _id: co, count, lastApplied, roles }, i) => {
               const pct = (count / topCos[0].count) * 100;
               const MEDALS = ['🥇', '🥈', '🥉'];
               const AVATAR_BG = [
@@ -122,6 +122,10 @@ export default function StatsPanel({ stats }) {
                 'linear-gradient(135deg,#a78bfa,#7c3aed)',
                 'linear-gradient(135deg,#34d399,#059669)',
               ];
+              const topRoles = (roles ?? []).slice(0, 2).join(', ');
+              const lastDate = lastApplied
+                ? new Date(lastApplied).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: '2-digit' })
+                : null;
               return (
                 <div key={co} className="sp2-co-row">
                   <div className="sp2-co-fill" style={{ width: `${pct}%` }} />
@@ -131,8 +135,14 @@ export default function StatsPanel({ stats }) {
                   <div className="sp2-co-avatar" style={{ background: AVATAR_BG[i % AVATAR_BG.length] }}>
                     {co[0].toUpperCase()}
                   </div>
-                  <span className="sp2-co-name">{co}</span>
-                  <span className="sp2-co-count">{count}</span>
+                  <div className="sp2-co-info">
+                    <span className="sp2-co-name">{co}</span>
+                    {topRoles && <span className="sp2-co-roles">{topRoles}</span>}
+                  </div>
+                  <div className="sp2-co-meta">
+                    <span className="sp2-co-count">{count} applied</span>
+                    {lastDate && <span className="sp2-co-date">Last: {lastDate}</span>}
+                  </div>
                 </div>
               );
             })}
