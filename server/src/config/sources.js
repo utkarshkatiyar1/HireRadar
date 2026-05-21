@@ -123,6 +123,13 @@ const sources = [
     workdayTenant: 'walmart',
     workdaySite:   'WalmartExternal',
   },
+  {
+    company:       'PwC',
+    ats:           'workday',
+    workdayBase:   'https://pwc.wd3.myworkdayjobs.com',
+    workdayTenant: 'pwc',
+    workdaySite:   'Global_Experienced_Careers',
+  },
 
   // ── Greenhouse ────────────────────────────────────────────────────────────
   { company: 'Postman',      ats: 'greenhouse', greenhouseToken: 'postman'                    },
@@ -204,6 +211,9 @@ const sources = [
   { company: 'Render',    ats: 'ashby', ashbySlug: 'render'     },
   { company: 'Jellyfish', ats: 'ashby', ashbySlug: 'jellyfish'  },
   { company: 'Vanta',     ats: 'ashby', ashbySlug: 'vanta'      },
+
+  // ── Eightfold ─────────────────────────────────────────────────────────────
+  { company: 'Qualcomm', ats: 'eightfold', eightfoldBase: 'https://qualcomm.eightfold.ai' },
 
   // ── SmartRecruiters ───────────────────────────────────────────────────────
   { company: 'Canva',         ats: 'smartrecruiters', smartrecruitersSlug: 'Canva'       },
