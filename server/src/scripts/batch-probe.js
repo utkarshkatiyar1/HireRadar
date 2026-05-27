@@ -26,7 +26,7 @@ const getArg = (flag, def = null) => {
 const concurrency = parseInt(getArg('--concurrency', '8'));
 const outFile     = getArg('--out', path.join(__dirname, 'found.json'));
 const onlyAts     = getArg('--ats', null);
-const candidatesFile = path.join(__dirname, 'candidates.json');
+const candidatesFile = getArg('--candidates', path.join(__dirname, 'candidates.json'));
 
 if (!fs.existsSync(candidatesFile)) {
   console.error('candidates.json not found next to this script');

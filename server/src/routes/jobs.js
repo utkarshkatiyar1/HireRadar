@@ -1,7 +1,6 @@
 const router = require('express').Router();
 const mongoose = require('mongoose');
-const { Job, User, UserJobState, UserPrefs } = require('../utils/db');
-const sources = require('../config/sources');
+const { Job, User, UserJobState, UserPrefs, Source } = require('../utils/db');
 const { isLocationOk, isSenior, scoreJob } = require('../utils/filter');
 const { requireAuth } = require('../middleware/auth');
 
@@ -29,17 +28,28 @@ const mergeUserState = async (jobs, userId) => {
 router.get('/', requireAuth, async (req, res) => {
   try {
     const userId = oid(req.user.uid);
-    const all = await Job.find({}).sort({ firstSeen: -1 }).lean();
+
+    const cutoff = new Date(Date.now() - 15 * 24 * 60 * 60 * 1000);
+
+    // Push cutoff to DB — only load recent jobs + any the user applied to
+    const appliedIds = (await UserJobState.find({ userId, applied: true }, { jobId: 1 }).lean())
+      .map(s => s.jobId);
+
+    const all = await Job.find({
+      $or: [
+        { firstSeen: { $gte: cutoff } },
+        { _id: { $in: appliedIds } },
+      ],
+    }).sort({ firstSeen: -1 }).lean();
+
     const withState = await mergeUserState(all, userId);
 
     if (req.query.raw === '1') return res.json(withState);
 
     const prefs = (await UserPrefs.findOne({ userId }).lean()) ?? {};
     const threshold = prefs.scoreThreshold ?? 0;
-    const cutoff = new Date(Date.now() - 15 * 24 * 60 * 60 * 1000);
 
     const jobs = withState
-      .filter(j => j.applied || new Date(j.firstSeen) >= cutoff)
       .filter(j => isLocationOk(j.location, prefs) && !isSenior(j.title, prefs))
       .map(j => ({ ...j, score: scoreJob(j, prefs) }))
       .filter(j => j.score >= threshold)
@@ -50,9 +60,13 @@ router.get('/', requireAuth, async (req, res) => {
   }
 });
 
-router.get('/sources', (_req, res) => {
-  const list = sources.map(s => ({ company: s.company, ats: s.ats }));
-  res.json(list);
+router.get('/sources', async (_req, res) => {
+  try {
+    const list = await Source.find({ enabled: true }, { company: 1, ats: 1, _id: 0 }).sort({ company: 1 }).lean();
+    res.json(list);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 router.get('/stats', requireAuth, async (req, res) => {

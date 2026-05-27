@@ -86,7 +86,7 @@ const loadSources = async () => {
   return docs.map(s => ({ ...DEFAULTS, ...s }));
 };
 
-const scrapeInBatches = async (limit = 8) => {
+const scrapeInBatches = async (limit = 20) => {
   const sources = await loadSources();
   console.log(`[scrape] ${sources.length} sources loaded from DB`);
   for (let i = 0; i < sources.length; i += limit) {
@@ -101,7 +101,7 @@ const scrapeInBatches = async (limit = 8) => {
 
 const scrape = async () => {
   console.log(`[${new Date().toISOString()}] scrape start`);
-  await scrapeInBatches(8);
+  await scrapeInBatches(20);
   console.log(`[${new Date().toISOString()}] scrape done`);
 };
 
