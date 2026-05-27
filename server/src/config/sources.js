@@ -275,5 +275,11 @@ const sources = [
 
 ];
 
-// Inject DEFAULTS into every source (per-source overrides win).
-module.exports = sources.map(s => ({ ...DEFAULTS, ...s }));
+const withDefaults = sources.map(s => ({ ...DEFAULTS, ...s }));
+
+// Primary export: injected array (backward-compatible with all existing requires)
+module.exports = withDefaults;
+
+// Named exports for scripts that need the raw list or DEFAULTS separately
+module.exports.raw      = sources;
+module.exports.DEFAULTS = DEFAULTS;

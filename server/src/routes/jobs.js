@@ -36,8 +36,10 @@ router.get('/', requireAuth, async (req, res) => {
 
     const prefs = (await UserPrefs.findOne({ userId }).lean()) ?? {};
     const threshold = prefs.scoreThreshold ?? 0;
+    const cutoff = new Date(Date.now() - 15 * 24 * 60 * 60 * 1000);
 
     const jobs = withState
+      .filter(j => j.applied || new Date(j.firstSeen) >= cutoff)
       .filter(j => isLocationOk(j.location, prefs) && !isSenior(j.title, prefs))
       .map(j => ({ ...j, score: scoreJob(j, prefs) }))
       .filter(j => j.score >= threshold)
