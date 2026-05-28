@@ -265,7 +265,7 @@ export default function App() {
                 Smart Filter
               </button>
               <span className="result-count">
-                {displayed.length} result{displayed.length !== 1 ? 's' : ''}
+                {loading ? '…' : `${displayed.length} result${displayed.length !== 1 ? 's' : ''}`}
               </span>
               <button
                 className={`refresh-btn${loading ? ' spinning' : ''}`}

@@ -31,22 +31,26 @@ router.get('/', requireAuth, async (req, res) => {
 
     const cutoff = new Date(Date.now() - 15 * 24 * 60 * 60 * 1000);
 
-    // Push cutoff to DB — only load recent jobs + any the user applied to
-    const appliedIds = (await UserJobState.find({ userId, applied: true }, { jobId: 1 }).lean())
-      .map(s => s.jobId);
+    const [appliedIds, recentJobs] = await Promise.all([
+      UserJobState.find({ userId, applied: true }, { jobId: 1 }).lean().then(r => r.map(s => s.jobId)),
+      Job.find({ firstSeen: { $gte: cutoff } }).sort({ firstSeen: -1 }).lean(),
+    ]);
 
-    const all = await Job.find({
-      $or: [
-        { firstSeen: { $gte: cutoff } },
-        { _id: { $in: appliedIds } },
-      ],
-    }).sort({ firstSeen: -1 }).lean();
+    // Merge in any applied jobs outside the cutoff window
+    const recentIds = new Set(recentJobs.map(j => String(j._id)));
+    const extraIds  = appliedIds.filter(id => !recentIds.has(String(id)));
+    const extraJobs = extraIds.length
+      ? await Job.find({ _id: { $in: extraIds } }).lean()
+      : [];
 
-    const withState = await mergeUserState(all, userId);
+    const all = [...recentJobs, ...extraJobs];
+
+    const [withState, prefs] = await Promise.all([
+      mergeUserState(all, userId),
+      UserPrefs.findOne({ userId }).lean().then(p => p ?? {}),
+    ]);
 
     if (req.query.raw === '1') return res.json(withState);
-
-    const prefs = (await UserPrefs.findOne({ userId }).lean()) ?? {};
     const threshold = prefs.scoreThreshold ?? 0;
 
     const jobs = withState

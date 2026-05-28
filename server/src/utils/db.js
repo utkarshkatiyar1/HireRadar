@@ -14,7 +14,7 @@ const jobSchema = new mongoose.Schema(
     dismissed:    { type: Boolean, default: false },
     ats:          { type: String, default: 'custom-api' },
     atsSearched:  { type: Boolean, default: false },
-    firstSeen:  { type: Date, default: Date.now },
+    firstSeen:  { type: Date, default: Date.now, index: true },
     lastSeen:   { type: Date, default: Date.now },
   },
   { timestamps: true }
