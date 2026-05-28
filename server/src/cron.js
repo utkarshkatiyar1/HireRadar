@@ -3,7 +3,7 @@ require('./utils/logger'); // patch console first
 const express = require('express');
 const cors    = require('cors');
 const cron    = require('node-cron');
-const { connect } = require('./utils/db');
+const { connect, Job, UserJobState } = require('./utils/db');
 const jobsRouter    = require('./routes/jobs');
 const authRouter    = require('./routes/auth');
 const adminRouter   = require('./routes/admin');
@@ -26,6 +26,9 @@ app.get('/health', (_req, res) => res.json({ ok: true }));
 (async () => {
   await connect();
   console.log('MongoDB connected');
+  // Ensure indexes exist on the live collection (no-op if already built)
+  await Promise.all([Job.syncIndexes(), UserJobState.syncIndexes()]);
+  console.log('Indexes synced');
   app.listen(PORT, () => console.log(`API  → http://localhost:${PORT}/jobs`));
 
   cron.schedule('0 */2 * * *', async () => {

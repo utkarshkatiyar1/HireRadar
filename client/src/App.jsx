@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import JobTable      from './components/JobTable';
 import StatsPanel    from './components/StatsPanel';
 import CompaniesPage from './components/CompaniesPage';
@@ -43,18 +43,25 @@ export default function App() {
 
   const PAGE_SIZE = 50;
 
+  const abortRef = useRef(null);
+
   const fetchJobs = useCallback(async () => {
+    // Cancel any in-flight request before starting a new one
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
     try {
       const url = smartFilter ? '/jobs' : '/jobs?raw=1';
-      const res = await authFetch(url);
+      const res = await authFetch(url, { signal: controller.signal });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setJobs(await res.json());
       setLastSync(new Date());
       setErr(null);
     } catch (e) {
+      if (e.name === 'AbortError') return;
       setErr(e.message);
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) setLoading(false);
     }
   }, [smartFilter]);
 
@@ -70,7 +77,7 @@ export default function App() {
     setLoading(true);
     fetchJobs();
     fetchStats();
-    const id = setInterval(() => { fetchJobs(); fetchStats(); }, 60_000);
+    const id = setInterval(() => { fetchJobs(); fetchStats(); }, 5 * 60_000);
     return () => clearInterval(id);
   }, [token, fetchJobs, fetchStats]);
 
@@ -273,7 +280,7 @@ export default function App() {
                 disabled={loading}
                 title="Refetch jobs from server"
               >
-                ↻
+                <span className="spin-icon">↻</span>
               </button>
               {isAdmin && (
                 <button

@@ -458,12 +458,12 @@ main { flex: 1; }
   font-size: 1rem;
   line-height: 1;
   cursor: pointer;
-  transition: color 0.15s, border-color 0.15s, background 0.15s, transform 0.4s;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
   flex-shrink: 0;
 }
 .refresh-btn:hover:not(:disabled) { color: var(--text-1); border-color: var(--border-hi); background: var(--elevated); }
 .refresh-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.refresh-btn.spinning { animation: spin 0.8s linear infinite; }
+.refresh-btn.spinning .spin-icon { animation: spin 0.8s linear infinite; display: inline-block; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 .scrape-btn {
