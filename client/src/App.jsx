@@ -28,6 +28,12 @@ export default function App() {
   const [page, setPage] = useState('jobs'); // 'jobs' | 'progress' | 'companies' | 'leaderboard' | 'terminal' | 'profile'
   const [, forceTick]   = useState(0);
 
+  const [theme, setTheme] = useState(() => localStorage.getItem('hr-theme') || 'dark');
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    localStorage.setItem('hr-theme', theme);
+  }, [theme]);
+
   const [jobs, setJobs]         = useState([]);
   const [loading, setLoading]   = useState(true);
   const [err, setErr]           = useState(null);
@@ -206,6 +212,13 @@ export default function App() {
               {fmtRel(lastSync)}
             </span>
           )}
+          <button
+            className="theme-toggle"
+            onClick={() => setTheme(t => t === 'dark' ? 'light' : 'dark')}
+            title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+          >
+            {theme === 'dark' ? '☀' : '🌙'}
+          </button>
           {user && (
             <button
               className={`user-chip${page === 'profile' ? ' active' : ''}`}

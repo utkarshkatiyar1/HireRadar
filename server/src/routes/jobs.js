@@ -50,11 +50,16 @@ router.get('/', requireAuth, async (req, res) => {
       UserPrefs.findOne({ userId }).lean().then(p => p ?? {}),
     ]);
 
-    if (req.query.raw === '1') return res.json(withState);
-    const threshold = prefs.scoreThreshold ?? 0;
+    // Location filter always applies — even in raw mode
+    const locationOk = withState.filter(j => isLocationOk(j.location, prefs));
 
-    const jobs = withState
-      .filter(j => isLocationOk(j.location, prefs) && !isSenior(j.title, prefs))
+    if (req.query.raw === '1') {
+      return res.json(locationOk.sort((a, b) => new Date(b.firstSeen) - new Date(a.firstSeen)));
+    }
+
+    const threshold = prefs.scoreThreshold ?? 0;
+    const jobs = locationOk
+      .filter(j => !isSenior(j.title, prefs))
       .map(j => ({ ...j, score: scoreJob(j, prefs) }))
       .filter(j => j.score >= threshold)
       .sort((a, b) => b.score - a.score || new Date(b.firstSeen) - new Date(a.firstSeen));

@@ -7,13 +7,13 @@ html { scroll-padding-top: 60px; }
 }
 
 :root {
+  /* ── Dark theme (default) ─────────────────────────────── */
   --bg:           #030c18;
   --surface:      #071525;
   --elevated:     #0a1c30;
   --border:       #160f30;
   --border-hi:    #2d1860;
 
-  /* primary accent — green, pairs with teal + violet */
   --orange:       #22c55e;
   --orange-dim:   rgba(34, 197, 94, 0.11);
   --orange-glow:  rgba(34, 197, 94, 0.26);
@@ -36,13 +36,73 @@ html { scroll-padding-top: 60px; }
 
   --max-w:        1440px;
   --ring:         0 0 0 3px var(--violet-dim);
+
+  /* ── Hardcoded-bg tokens (overridden in light) ────────── */
+  --header-bg:     rgba(3,  12, 24, 0.85);
+  --filterbar-bg:  rgba(3,  12, 24, 0.78);
+  --savebar-bg:    rgba(7,  21, 37, 0.92);
+  --header-shadow: none;
+  --tab-hover-bg:  rgba(255,255,255,0.04);
+  --tab-count-bg:  rgba(255,255,255,0.06);
+  --error-color:   #f87171;
+  --danger-color:  #f87171;
+  --body-grad:     radial-gradient(ellipse 80% 320px at 50% 0, rgba(139,92,246,0.07) 0%, transparent 100%);
+  --selection-bg:  rgba(139,92,246,0.35);
+}
+
+/* ── Light theme ────────────────────────────────────────── */
+/*
+ * "Lit navy" — the dark mode's deep blue-black palette, flooded
+ * with light. Same cool-blue color temperature, same accent DNA.
+ * Feels like the same app photographed in daylight, not a reskin.
+ */
+:root[data-theme="light"] {
+  --bg:           #eef2f8;   /* cool slate-blue — navy diluted with white */
+  --surface:      #f8fafd;   /* near-white with cool cast */
+  --elevated:     #e2eaf4;   /* clearly elevated, same hue family */
+  --border:       #c8d5e6;   /* cool blue-gray border */
+  --border-hi:    #9db4cc;   /* stronger cool border */
+
+  /* Same accent hues, shifted darker for light-bg contrast */
+  --orange:       #15803d;   /* green-700  (dark uses green-500 #22c55e) */
+  --orange-dim:   rgba(21, 128, 61, 0.10);
+  --orange-glow:  rgba(21, 128, 61, 0.22);
+
+  --teal:         #0e7490;   /* cyan-700   (dark uses teal-300 #2dd4bf) */
+  --teal-dim:     rgba(14, 116, 144, 0.10);
+  --teal-glow:    rgba(14, 116, 144, 0.22);
+
+  --violet:       #6d28d9;   /* violet-700 (dark uses violet-500 #8b5cf6) */
+  --violet-dim:   rgba(109, 40, 217, 0.10);
+  --violet-glow:  rgba(109, 40, 217, 0.22);
+
+  --green:        #15803d;
+  --green-dim:    rgba(21, 128, 61, 0.10);
+
+  /* Cool slate text — matches the blue temperature of the surfaces */
+  --text-1: #0d1b2e;   /* near-black, same blue cast as dark bg    ~14:1 */
+  --text-2: #2c4a6a;   /* deep slate-blue                          ~7:1  */
+  --text-3: #5a7a99;   /* medium slate                             ~4.5:1 */
+  --text-4: #93afc8;   /* muted slate — disabled/decorative only   ~2.5:1 */
+
+  --ring: 0 0 0 3px rgba(109, 40, 217, 0.16);
+
+  --header-bg:     rgba(238, 242, 248, 0.93);
+  --filterbar-bg:  rgba(238, 242, 248, 0.87);
+  --savebar-bg:    rgba(248, 250, 253, 0.97);
+  --header-shadow: 0 1px 0 var(--border), 0 2px 16px rgba(13,27,46,0.06);
+  --tab-hover-bg:  rgba(13, 27, 46, 0.05);
+  --tab-count-bg:  rgba(13, 27, 46, 0.07);
+  --error-color:   #dc2626;
+  --danger-color:  #dc2626;
+  /* Subtle violet breath — mirrors dark mode's gradient direction */
+  --body-grad:     radial-gradient(ellipse 80% 320px at 50% 0, rgba(109,40,217,0.06) 0%, transparent 100%);
+  --selection-bg:  rgba(109, 40, 217, 0.18);
 }
 
 body {
   font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
-  background:
-    radial-gradient(ellipse 80% 320px at 50% 0, rgba(139,92,246,0.07) 0%, transparent 100%),
-    var(--bg);
+  background: var(--body-grad), var(--bg);
   color: var(--text-1);
   min-height: 100vh;
   font-size: 14px;
@@ -54,7 +114,7 @@ body {
   flex-direction: column;
 }
 
-::selection { background: rgba(139,92,246,0.35); color: var(--text-1); }
+::selection { background: var(--selection-bg); color: var(--text-1); }
 
 ::-webkit-scrollbar         { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track   { background: transparent; }
@@ -107,9 +167,10 @@ main { flex: 1; }
   height: 60px;
   padding: 0 max(40px, calc((100% - var(--max-w)) / 2 + 40px));
   border-bottom: 1px solid var(--border);
-  background: rgba(3, 12, 24, 0.85);
-  backdrop-filter: saturate(180%) blur(16px);
-  -webkit-backdrop-filter: saturate(180%) blur(16px);
+  background: var(--header-bg);
+  backdrop-filter: saturate(180%) blur(18px);
+  -webkit-backdrop-filter: saturate(180%) blur(18px);
+  box-shadow: var(--header-shadow);
 }
 
 /* Logo */
@@ -169,7 +230,7 @@ main { flex: 1; }
   transition: opacity 0.15s;
 }
 
-.page-tab:hover { color: var(--text-2); background: rgba(255,255,255,0.04); }
+.page-tab:hover { color: var(--text-2); background: var(--tab-hover-bg); }
 
 .page-tab.active { color: var(--text-1); font-weight: 600; }
 .page-tab.active::after { opacity: 1; }
@@ -261,14 +322,14 @@ main { flex: 1; }
   height: 7px;
   border-radius: 50%;
   background: var(--green);
-  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.18);
+  box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.20);
   animation: live-pulse 2s ease-in-out infinite;
   flex-shrink: 0;
 }
 
 @keyframes live-pulse {
-  0%, 100% { box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.18); }
-  50%      { box-shadow: 0 0 0 6px rgba(34, 197, 94, 0.05); }
+  0%, 100% { box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.20); }
+  50%      { box-shadow: 0 0 0 6px rgba(22, 163, 74, 0.06); }
 }
 
 /* ── Filter Bar ──────────────────────────────────────────── */
@@ -277,7 +338,7 @@ main { flex: 1; }
   position: sticky;
   top: 60px;
   z-index: 20;
-  background: rgba(3, 12, 24, 0.78);
+  background: var(--filterbar-bg);
   border-bottom: 1px solid var(--border);
   padding: 12px max(40px, calc((100% - var(--max-w)) / 2 + 40px));
   margin: 0 -40px;
@@ -285,8 +346,8 @@ main { flex: 1; }
   align-items: center;
   gap: 12px;
   flex-wrap: wrap;
-  backdrop-filter: saturate(160%) blur(12px);
-  -webkit-backdrop-filter: saturate(160%) blur(12px);
+  backdrop-filter: saturate(160%) blur(14px);
+  -webkit-backdrop-filter: saturate(160%) blur(14px);
 }
 
 .status-tabs {
@@ -500,7 +561,7 @@ main { flex: 1; }
   font-size: 0.9rem;
 }
 
-.msg.error { color: #f87171; }
+.msg.error { color: var(--error-color); }
 
 .loading-pulse {
   display: flex;
@@ -1192,7 +1253,7 @@ tbody tr.row-applied:hover td      { background: var(--teal-dim); opacity: 0.8; 
 .cp-tab-count {
   font-size: 0.62rem;
   font-weight: 700;
-  background: rgba(255,255,255,0.06);
+  background: var(--tab-count-bg);
   padding: 1px 6px;
   border-radius: 8px;
   min-width: 18px;
@@ -1591,8 +1652,8 @@ tbody tr.row-applied:hover td      { background: var(--teal-dim); opacity: 0.8; 
 
 .auth-error {
   background: rgba(239, 68, 68, 0.10);
-  border: 1px solid rgba(239, 68, 68, 0.3);
-  color: #fca5a5;
+  border: 1px solid rgba(239, 68, 68, 0.30);
+  color: var(--error-color);
   font-size: 0.82rem;
   padding: 10px 12px;
   border-radius: 8px;
@@ -1708,8 +1769,8 @@ tbody tr.row-applied:hover td      { background: var(--teal-dim); opacity: 0.8; 
 /* Logout button inside ProfilePage */
 .profile-logout-btn {
   background: none;
-  border: 1px solid rgba(239, 68, 68, 0.3);
-  color: #f87171;
+  border: 1px solid rgba(220, 38, 38, 0.30);
+  color: var(--danger-color);
   font-size: 0.8rem;
   font-weight: 600;
   padding: 9px 20px;
@@ -2557,9 +2618,9 @@ tbody tr.row-applied:hover td      { background: var(--teal-dim); opacity: 0.8; 
 
 .tag-clear-btn {
   background: none;
-  border: 1px solid rgba(239, 68, 68, 0.25);
+  border: 1px solid rgba(220, 38, 38, 0.25);
   border-radius: 8px;
-  color: #f87171;
+  color: var(--danger-color);
   font-size: 0.72rem;
   padding: 7px 10px;
   cursor: pointer;
@@ -2599,7 +2660,7 @@ tbody tr.row-applied:hover td      { background: var(--teal-dim); opacity: 0.8; 
   justify-content: space-between;
   gap: 12px;
   padding: 12px max(40px, calc((100% - 720px) / 2 + 20px));
-  background: rgba(7, 21, 37, 0.92);
+  background: var(--savebar-bg);
   border-top: 1px solid var(--border);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
@@ -2611,7 +2672,7 @@ tbody tr.row-applied:hover td      { background: var(--teal-dim); opacity: 0.8; 
 
 .profile-unsaved  { font-size: 0.75rem; color: var(--violet); font-weight: 500; }
 .profile-saved-note { font-size: 0.75rem; color: var(--text-3); }
-.profile-error  { font-size: 0.75rem; color: #f87171; }
+.profile-error  { font-size: 0.75rem; color: var(--error-color); }
 
 .profile-reset-btn {
   background: none;
@@ -2643,8 +2704,8 @@ tbody tr.row-applied:hover td      { background: var(--teal-dim); opacity: 0.8; 
 /* Logout button in user card */
 .profile-logout-btn {
   background: none;
-  border: 1px solid rgba(239, 68, 68, 0.25);
-  color: #f87171;
+  border: 1px solid rgba(220, 38, 38, 0.25);
+  color: var(--danger-color);
   font-size: 0.75rem;
   font-weight: 600;
   padding: 7px 14px;
@@ -2655,3 +2716,84 @@ tbody tr.row-applied:hover td      { background: var(--teal-dim); opacity: 0.8; 
   transition: background 0.15s, border-color 0.15s;
 }
 .profile-logout-btn:hover { background: rgba(239,68,68,0.08); border-color: rgba(239,68,68,0.5); }
+
+/* ── Theme toggle button ─────────────────────────────────── */
+
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: 1rem;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s, background 0.15s, transform 0.2s;
+  flex-shrink: 0;
+  line-height: 1;
+}
+.theme-toggle:hover {
+  border-color: var(--border-hi);
+  color: var(--text-1);
+  transform: rotate(15deg);
+}
+.theme-toggle:active { transform: rotate(30deg) scale(0.92); }
+
+/* ── Light mode: scoped overrides for hardcoded values ────── */
+
+:root[data-theme="light"] .auth-card {
+  box-shadow:
+    0 20px 60px -16px rgba(13, 27, 46, 0.12),
+    0 4px 16px rgba(13, 27, 46, 0.06),
+    0 0 0 1px var(--border);
+}
+
+:root[data-theme="light"] .mesh-blob { opacity: 0.18; }
+
+/* Stats cards: cool slate shadow */
+:root[data-theme="light"] .sp2-section {
+  box-shadow: 0 2px 12px rgba(13,27,46,0.07);
+}
+:root[data-theme="light"] .sp2-section:first-child {
+  border-color: var(--border-hi);
+  box-shadow: 0 2px 18px rgba(13,27,46,0.09);
+}
+
+:root[data-theme="light"] tbody tr:hover td { background: var(--orange-dim); }
+
+:root[data-theme="light"] .auth-submit {
+  box-shadow: 0 4px 14px rgba(109, 40, 217, 0.28), inset 0 1px 0 rgba(255,255,255,0.15);
+}
+
+/* Scrollbar thumb */
+:root[data-theme="light"] ::-webkit-scrollbar-thumb {
+  background: var(--border-hi);
+  border-color: var(--bg);
+}
+
+/* Table head: elevated cool bg */
+:root[data-theme="light"] thead th { background: var(--elevated); }
+
+/* Leaderboard avatar ring */
+:root[data-theme="light"] .lb-rank-avatar,
+:root[data-theme="light"] .podium-avatar { border-color: var(--border); }
+
+/* ── Terminal in light mode ──────────────────────────────────
+ * Terminal intentionally stays dark — it's a terminal — but shifts
+ * from pitch-black to deep navy so it reads as "lit dark panel"
+ * rather than a jarring void inside the light UI.
+ */
+:root[data-theme="light"] .terminal-page      { background: #0a1929; }
+:root[data-theme="light"] .terminal-toolbar   { background: #0f2236; border-bottom-color: #1e3a55; }
+:root[data-theme="light"] .terminal-filter    { background: #0f2236; border-color: #1e3a55; color: #8ab4d4; }
+:root[data-theme="light"] .terminal-filter::placeholder { color: #3d6080; }
+:root[data-theme="light"] .terminal-count     { color: #3d6080; }
+:root[data-theme="light"] .terminal-btn       { background: #152c42; border-color: #1e3a55; color: #8ab4d4; }
+:root[data-theme="light"] .terminal-btn:hover { background: #1e3a55; color: #c8e0f4; }
+:root[data-theme="light"] .terminal-body::-webkit-scrollbar-thumb { background: #1e3a55; }
+:root[data-theme="light"] .terminal-empty     { color: #3d6080; }
+:root[data-theme="light"] .terminal-ts        { color: #3d6080; }
+:root[data-theme="light"] .terminal-msg       { color: #8ab4d4; }
