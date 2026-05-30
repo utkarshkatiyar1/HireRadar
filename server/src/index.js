@@ -73,33 +73,43 @@ const scrapeOne = async (src) => {
 // ─── Terminal progress reporter ───────────────────────────────────────────────
 class ScrapeReporter {
   constructor(total) {
-    this.total    = total;
-    this.done     = 0;
-    this.newJobs  = 0;
-    this.failed   = 0;
-    this.top      = []; // { company, count }
-    this.start    = Date.now();
-    this.isTTY    = process.stdout.isTTY;
-    this._barUp   = false;
+    this.total   = total;
+    this.done    = 0;
+    this.newJobs = 0;
+    this.failed  = 0;
+    this.top     = [];
+    this.start   = Date.now();
+    this.isTTY   = process.stdout.isTTY;
+    this._barUp  = false;
   }
 
   tick({ company, ats, saved = 0, failed = false }) {
     this.done++;
     if (failed) {
       this.failed++;
-      this._line(`\x1b[31m✗\x1b[0m ${company.padEnd(30)} ${(ats || '').padEnd(16)} failed`);
     } else if (saved > 0) {
       this.newJobs += saved;
       this.top.push({ company, count: saved });
-      this._line(`\x1b[32m✓\x1b[0m ${company.padEnd(30)} ${(ats || '').padEnd(16)} \x1b[32m+${saved}\x1b[0m new`);
     }
-    this._bar();
-  }
 
-  // Print a content line above the bar
-  _line(text) {
-    if (this.isTTY && this._barUp) process.stdout.write('\r\x1b[K'); // clear bar
-    console.log('  ' + text);
+    if (this.isTTY) {
+      // In TTY: print notable results as scrolling lines, bar overwrites itself
+      if (failed || saved > 0) {
+        if (this._barUp) process.stdout.write('\r\x1b[K');
+        const icon = failed ? '\x1b[31mFAIL\x1b[0m' : '\x1b[32m+' + saved + '\x1b[0m';
+        process.stdout.write(`  ${icon.padEnd(failed ? 4 : String(saved).length + 5)}  ${company.padEnd(30)}  ${(ats || '').padEnd(14)}\n`);
+      }
+      this._renderBarTTY();
+    } else {
+      // In non-TTY (PM2 / Docker): clean plain-text milestones only, no ANSI
+      if (saved > 0) {
+        console.log(`[scrape] +${saved} ${company} (${ats})`);
+      }
+      if (this.done % 50 === 0 || this.done === this.total) {
+        const pct = ((this.done / this.total) * 100).toFixed(0);
+        console.log(`[scrape] ${pct}% (${this.done}/${this.total}) | +${this.newJobs} new | ${this.failed} failed | ${this._hms(Date.now() - this.start)}`);
+      }
+    }
   }
 
   _hms(ms) {
@@ -107,47 +117,36 @@ class ScrapeReporter {
     return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
   }
 
-  _bar() {
-    const pct     = this.done / this.total;
+  _renderBarTTY() {
+    const pct    = this.done / this.total;
     const elapsed = Date.now() - this.start;
-    const eta     = this.done > 0 ? (elapsed / this.done) * (this.total - this.done) : 0;
-    const filled  = Math.round(pct * 28);
-    const bar     = `\x1b[32m${'█'.repeat(filled)}\x1b[90m${'░'.repeat(28 - filled)}\x1b[0m`;
-    const pctStr  = `${(pct * 100).toFixed(0).padStart(3)}%`;
-    const line    = `  [${bar}] ${pctStr}  \x1b[2m${this.done}/${this.total}\x1b[0m  \x1b[33m+${this.newJobs} new\x1b[0m  \x1b[31m✗${this.failed}\x1b[0m  ⏱ ${this._hms(elapsed)}  ETA ${this._hms(eta)}`;
-
-    if (this.isTTY) {
-      process.stdout.write(`\r\x1b[K${line}`);
-      this._barUp = true;
-    } else if (this.done % 25 === 0 || this.done === this.total) {
-      console.log(`[scrape] ${(pct * 100).toFixed(0)}% (${this.done}/${this.total}) +${this.newJobs} new  ✗${this.failed}  ${this._hms(elapsed)}`);
-    }
+    const eta    = this.done > 0 ? (elapsed / this.done) * (this.total - this.done) : 0;
+    const filled = Math.round(pct * 30);
+    const bar    = '\x1b[32m' + '#'.repeat(filled) + '\x1b[90m' + '-'.repeat(30 - filled) + '\x1b[0m';
+    const line   = `  [${bar}] \x1b[1m${(pct * 100).toFixed(0).padStart(3)}%\x1b[0m  ${this.done}/${this.total}  +${this.newJobs} new  fail:${this.failed}  ${this._hms(elapsed)}  ETA:${this._hms(eta)}`;
+    process.stdout.write(`\r\x1b[K${line}`);
+    this._barUp = true;
   }
 
   summary() {
     if (this.isTTY) process.stdout.write('\r\x1b[K');
 
     const elapsed = this._hms(Date.now() - this.start);
-    const top5 = this.top
+    const top5    = this.top
       .sort((a, b) => b.count - a.count)
       .slice(0, 5)
-      .map(s => `${s.company} \x1b[32m+${s.count}\x1b[0m`)
-      .join('  ·  ');
+      .map(s => `${s.company} (+${s.count})`)
+      .join(' | ');
 
-    const W = 64;
-    const row = (txt) => {
-      const clean = txt.replace(/\x1b\[[0-9;]*m/g, '');
-      const pad   = Math.max(0, W - clean.length);
-      return `  \x1b[1m║\x1b[0m  ${txt}${' '.repeat(pad)}\x1b[1m║\x1b[0m`;
-    };
-
-    console.log();
-    console.log(`  \x1b[1m╔${'═'.repeat(W + 2)}╗\x1b[0m`);
-    console.log(row(`\x1b[32m\x1b[1m✓ Scrape complete\x1b[0m   ${this.done - this.failed}/${this.total} sources   ⏱ ${elapsed}`));
-    console.log(row(`\x1b[1m+${this.newJobs} new jobs\x1b[0m   \x1b[31m✗ ${this.failed} failed\x1b[0m`));
-    if (top5) console.log(row(`Top: ${top5}`));
-    console.log(`  \x1b[1m╚${'═'.repeat(W + 2)}╝\x1b[0m`);
-    console.log();
+    if (this.isTTY) {
+      console.log('\n  +-----------------------------------------------------------------+');
+      console.log(`  |  Scrape done   ${(this.done - this.failed)}/${this.total} sources   +${this.newJobs} new jobs   fail:${this.failed}   ${elapsed}  |`);
+      if (top5) console.log(`  |  Top: ${top5}`);
+      console.log('  +-----------------------------------------------------------------+\n');
+    } else {
+      console.log(`[scrape] DONE | ${this.done - this.failed}/${this.total} ok | +${this.newJobs} new | ${this.failed} failed | ${elapsed}`);
+      if (top5) console.log(`[scrape] TOP: ${top5}`);
+    }
   }
 }
 
