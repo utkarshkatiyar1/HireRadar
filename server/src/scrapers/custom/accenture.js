@@ -41,25 +41,38 @@ module.exports = async (src) => {
 
     const domItems = await page.evaluate(() => {
       const rows = [];
-      const titleNodes = document.querySelectorAll(
-        '[class*="title"],[class*="jobTitle"],[class*="job-title"],[class*="cmp-teaser__title"]'
+      // Find job cards first, then extract title from the primary anchor inside them
+      const cards = document.querySelectorAll(
+        'li, article, [class*="card"], [class*="result"], [class*="teaser"]'
       );
-      titleNodes.forEach(el => {
-        const card = el.closest(
-          'li, article, [class*="card"], [class*="result"], [class*="item"], [class*="teaser"]'
-        );
-        if (!card) return;
-        const link = card.querySelector('a[href]');
+      cards.forEach(card => {
+        // Title anchor: the first meaningful link inside the card that isn't a button action
+        const link = [...card.querySelectorAll('a[href]')].find(a => {
+          const href = a.getAttribute('href') || '';
+          return href.includes('job') || href.includes('career') || href.includes('position');
+        }) ?? card.querySelector('a[href]');
         if (!link) return;
+
+        // Prefer explicit title elements; fall back to the link's own text
+        const titleEl = card.querySelector(
+          '[class*="cmp-teaser__title"], [class*="jobTitle"], [class*="job-title"], h2, h3, h4'
+        );
+        // Use only the direct/shallow text — avoid pulling in nested button labels
+        const rawTitle = (titleEl ?? link).innerText?.trim() ?? (titleEl ?? link).textContent?.trim() ?? '';
+        // Skip cards whose "title" is actually a UI action string
+        if (!rawTitle || /select to (save|discard)/i.test(rawTitle)) return;
+
         rows.push({
-          title:    el.textContent.trim(),
-          location: card.querySelector('[class*="location"],[class*="city"],[class*="place"]')?.textContent?.trim() ?? '',
-          exp:      card.querySelector('[class*="exp"],[class*="experience"],[class*="year"],[class*="level"]')?.textContent?.trim() ?? '',
+          title:    rawTitle,
+          location: card.querySelector('[class*="location"],[class*="city"],[class*="place"]')?.innerText?.trim() ?? '',
+          exp:      card.querySelector('[class*="exp"],[class*="experience"],[class*="year"],[class*="level"]')?.innerText?.trim() ?? '',
           url:      link.href,
-          date:     card.querySelector('[class*="date"],[class*="posted"],[class*="time"]')?.textContent?.trim() ?? '',
+          date:     card.querySelector('[class*="date"],[class*="posted"],[class*="time"]')?.innerText?.trim() ?? '',
         });
       });
-      return rows;
+      // Dedupe by URL
+      const seen = new Set();
+      return rows.filter(r => seen.has(r.url) ? false : seen.add(r.url));
     });
 
     for (const j of domItems) {

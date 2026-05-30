@@ -78,6 +78,8 @@ const sourceSchema = new mongoose.Schema(
     workdayBase:         String,
     workdayTenant:       String,
     workdaySite:         String,
+    sapTenant:           String,
+    sapHost:             String,
     eightfoldBase:       String,
     baseUrl:             String,
     searchPath:          String,
@@ -86,6 +88,8 @@ const sourceSchema = new mongoose.Schema(
     keywords:            [String],
     locations:           [String],
     maxExp:              Number,
+    // Source classification
+    sourceType:          { type: String, enum: ['ATS_STANDARD', 'ATS_WORKDAY', 'CUSTOM_JSON', 'CUSTOM_HTML'], default: 'ATS_STANDARD' },
     // Health tracking — updated after every scrape
     lastJobCount:        { type: Number, default: null },
     lastScrapedAt:       { type: Date,   default: null },
