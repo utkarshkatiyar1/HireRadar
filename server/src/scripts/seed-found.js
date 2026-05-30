@@ -5,7 +5,7 @@
  *
  * Usage: node seed-found.js [path/to/found.json]
  */
-require('dotenv').config();
+require('dotenv').config({ path: require('path').join(__dirname, '../../.env') });
 const fs   = require('fs');
 const path = require('path');
 const { connect, Source } = require('../utils/db');
