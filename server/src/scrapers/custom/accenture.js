@@ -41,26 +41,27 @@ module.exports = async (src) => {
 
     const domItems = await page.evaluate(() => {
       const rows = [];
-      // Find job cards first, then extract title from the primary anchor inside them
+      // Avoid bare `li` — too broad, matches locale/nav pickers.
+      // Accenture job cards use .cmp-teaser, article, or labelled card/result divs.
       const cards = document.querySelectorAll(
-        'li, article, [class*="card"], [class*="result"], [class*="teaser"]'
+        'article, [class*="cmp-teaser"], [class*="card"], [class*="result"], [class*="teaser"], [class*="job-item"], [class*="jobItem"]'
       );
       cards.forEach(card => {
-        // Title anchor: the first meaningful link inside the card that isn't a button action
         const link = [...card.querySelectorAll('a[href]')].find(a => {
           const href = a.getAttribute('href') || '';
-          return href.includes('job') || href.includes('career') || href.includes('position');
+          return /job|career|position|opening/i.test(href);
         }) ?? card.querySelector('a[href]');
         if (!link) return;
 
-        // Prefer explicit title elements; fall back to the link's own text
         const titleEl = card.querySelector(
           '[class*="cmp-teaser__title"], [class*="jobTitle"], [class*="job-title"], h2, h3, h4'
         );
-        // Use only the direct/shallow text — avoid pulling in nested button labels
         const rawTitle = (titleEl ?? link).innerText?.trim() ?? (titleEl ?? link).textContent?.trim() ?? '';
-        // Skip cards whose "title" is actually a UI action string
-        if (!rawTitle || /select to (save|discard)/i.test(rawTitle)) return;
+
+        // Skip UI action strings and locale-picker items like "United Kingdom (English)"
+        if (!rawTitle) return;
+        if (/select to (save|discard)/i.test(rawTitle)) return;
+        if (/\b(English|Spanish|French|German|Portuguese|Italian|Japanese|Chinese|Korean|Dutch|Polish|Arabic|Turkish|Swedish|Norwegian|Danish|Finnish|Hindi|Russian|Thai|Vietnamese)\b/i.test(rawTitle) && /\(/.test(rawTitle)) return;
 
         rows.push({
           title:    rawTitle,
