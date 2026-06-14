@@ -1,6 +1,6 @@
 # HireRadar
 
-A personal job aggregator that scrapes 78 company career pages, filters them for frontend/junior roles in India, and surfaces the best matches — ranked by a configurable scoring engine.
+A personal job aggregator that scrapes 800+ company career pages, filters them for frontend/junior roles in India, and surfaces the best matches — ranked by a configurable scoring engine.
 
 **Live:** [hireradaar.web.app](https://hireradaar.web.app) · **API:** [hireradar-sl0g.onrender.com](https://hireradar-sl0g.onrender.com)
 
@@ -8,7 +8,7 @@ A personal job aggregator that scrapes 78 company career pages, filters them for
 
 ## What it does
 
-- Scrapes 78 companies across 6 ATS platforms (Greenhouse, Lever, Workday, Ashby, SmartRecruiters, Taleo) + custom APIs + Playwright for JS-heavy pages
+- Scrapes 800+ companies across 10 ATS platforms (Greenhouse, Lever, Workday, Ashby, SmartRecruiters, Taleo) + custom APIs + Playwright for JS-heavy pages
 - Smart Filter ranks jobs by keyword scoring — frontend/React signals up, backend/devops signals down — and hard-drops senior/non-eng titles
 - Every user configures their own filter rules from a Profile page (location allowlist, title exclusions, boost/suppress keywords, score threshold)
 - Tracks applications per user with streaks, weekly/monthly charts, and a leaderboard
@@ -189,6 +189,6 @@ Jobs below the user's score threshold are hidden when Smart Filter is ON. Toggle
 
 ## Scraping coverage
 
-78 companies across: Greenhouse (44), Ashby (12), SmartRecruiters (5), Lever (4), Workday (7), Taleo (1), Custom API (2), Playwright (1).
+800+ companies across: Greenhouse (381), Ashby (210), SmartRecruiters (60), Lever (96), Workday (33), Taleo (5), Custom API (4), Playwright (2).
 
 Companies include: Postman, PhonePe, Stripe, Razorpay, Groww, Figma, Notion, Linear, Supabase, Vercel, Datadog, Discord, Airbnb, Dropbox, Meesho, CRED, Spotify, Canva, Freshworks, Adobe, Cisco, Nvidia, PayPal, Salesforce, and more.
