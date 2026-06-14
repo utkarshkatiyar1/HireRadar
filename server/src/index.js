@@ -156,32 +156,80 @@ const loadSources = async () => {
   return docs.map(s => ({ ...DEFAULTS, ...s }));
 };
 
+// ─── Per-ATS concurrency limits ───────────────────────────────────────────────
+// Prevents hammering a single ATS API with too many simultaneous requests,
+// which causes rate-limit errors that incorrectly trigger auto-disable.
+const ATS_CONCURRENCY = {
+  ashby:           3,
+  greenhouse:      5,
+  lever:           5,
+  smartrecruiters: 3,
+  workday:         3,
+  eightfold:       2,
+  'taleo-ssr':     2,
+  'custom-api':    5,
+  playwright:      1,
+};
+const GLOBAL_CONCURRENCY = 20;
+
+class Semaphore {
+  constructor(limit) {
+    this._limit   = limit;
+    this._active  = 0;
+    this._queue   = [];
+  }
+  acquire() {
+    if (this._active < this._limit) {
+      this._active++;
+      return Promise.resolve();
+    }
+    return new Promise(resolve => this._queue.push(resolve));
+  }
+  release() {
+    this._active--;
+    if (this._queue.length) {
+      this._active++;
+      this._queue.shift()();
+    }
+  }
+}
+
 // ─── Main scrape loop ─────────────────────────────────────────────────────────
-const scrapeInBatches = async (limit = 20) => {
+const scrapeInBatches = async () => {
   const sources  = await loadSources();
   const reporter = new ScrapeReporter(sources.length);
 
   console.log(`\n  [scrape] ${sources.length} sources loaded from DB\n`);
 
-  for (let i = 0; i < sources.length; i += limit) {
-    const batch = sources.slice(i, i + limit);
-    // Each source ticks the reporter as soon as it finishes — real-time updates
-    await Promise.allSettled(
-      batch.map(src =>
-        scrapeOne(src)
-          .then(r  => reporter.tick(r))
-          .catch(() => reporter.tick({ company: src.company, ats: src.ats, saved: 0, failed: true }))
-      )
-    );
-  }
+  // One semaphore per ATS type + one global cap
+  const atsSems    = {};
+  const globalSem  = new Semaphore(GLOBAL_CONCURRENCY);
 
+  const run = async (src) => {
+    const atsKey = src.ats in ATS_CONCURRENCY ? src.ats : 'custom-api';
+    if (!atsSems[atsKey]) atsSems[atsKey] = new Semaphore(ATS_CONCURRENCY[atsKey] ?? 5);
+
+    await globalSem.acquire();
+    await atsSems[atsKey].acquire();
+    try {
+      const r = await scrapeOne(src);
+      reporter.tick(r);
+    } catch {
+      reporter.tick({ company: src.company, ats: src.ats, saved: 0, failed: true });
+    } finally {
+      atsSems[atsKey].release();
+      globalSem.release();
+    }
+  };
+
+  await Promise.allSettled(sources.map(src => run(src)));
   reporter.summary();
 };
 
 const scrape = async () => {
   const ts = new Date().toISOString();
   console.log(`\n  ┄┄ scrape triggered ${ts}`);
-  await scrapeInBatches(20);
+  await scrapeInBatches();
 };
 
 module.exports = scrape;

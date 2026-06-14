@@ -33,7 +33,6 @@ const sources = [
   { company: 'Slice',     ats: 'custom-api', scraperModule: 'slice'     },
   { company: 'Swiggy',    ats: 'custom-api', scraperModule: 'swiggy'    },
   { company: 'Juspay',    ats: 'custom-api', scraperModule: 'juspay'    },
-  { company: 'Darwinbox', ats: 'playwright',  scraperModule: 'darwinbox' },
 
   // ── Playwright (JS-rendered SPA) ──────────────────────────────────────────
   { company: 'Accenture', ats: 'playwright', scraperModule: 'accenture' },
@@ -117,13 +116,6 @@ const sources = [
     workdaySite:   'targetcareers',
   },
   {
-    company:       'Walmart Global Tech',
-    ats:           'workday',
-    workdayBase:   'https://walmart.wd5.myworkdayjobs.com',
-    workdayTenant: 'walmart',
-    workdaySite:   'WalmartExternal',
-  },
-  {
     company:       'PwC',
     ats:           'workday',
     workdayBase:   'https://pwc.wd3.myworkdayjobs.com',
@@ -142,7 +134,6 @@ const sources = [
   { company: 'Okta',         ats: 'greenhouse', greenhouseToken: 'okta'                       },
   { company: 'Cloudflare',   ats: 'greenhouse', greenhouseToken: 'cloudflare'                 },
   { company: 'Asana',        ats: 'greenhouse', greenhouseToken: 'asana'                      },
-  { company: 'HubSpot',      ats: 'greenhouse', greenhouseToken: 'hubspot'                    },
   { company: 'Intercom',     ats: 'greenhouse', greenhouseToken: 'intercom'                   },
   { company: 'PagerDuty',    ats: 'greenhouse', greenhouseToken: 'pagerduty'                  },
   { company: 'MongoDB',      ats: 'greenhouse', greenhouseToken: 'mongodb'                    },
@@ -178,7 +169,6 @@ const sources = [
   { company: 'Optiver',     ats: 'greenhouse', greenhouseToken: 'optiverus'                  },
   { company: 'Skyscanner',  ats: 'greenhouse', greenhouseToken: 'skyscanner'                 },
   { company: 'Rubrik',      ats: 'greenhouse', greenhouseToken: 'rubrik'                     },
-  { company: 'Chargebee',   ats: 'greenhouse', greenhouseToken: 'chargebee'                  },
   { company: 'Twitch',      ats: 'greenhouse', greenhouseToken: 'twitch'                     },
   { company: 'Typeform',    ats: 'greenhouse', greenhouseToken: 'typeform'                    },
   { company: 'Contentful',  ats: 'greenhouse', greenhouseToken: 'contentful'                  },
@@ -198,7 +188,6 @@ const sources = [
   { company: 'Sentry',     ats: 'ashby', ashbySlug: 'sentry'     },
   { company: 'Supabase',   ats: 'ashby', ashbySlug: 'supabase'   },
   { company: 'Ramp',       ats: 'ashby', ashbySlug: 'ramp'       },
-  { company: 'Deel',       ats: 'ashby', ashbySlug: 'deel'       },
   { company: 'Replit',     ats: 'ashby', ashbySlug: 'replit'     },
   { company: 'Snowflake',  ats: 'ashby', ashbySlug: 'snowflake'  },
   { company: 'Confluent',  ats: 'ashby', ashbySlug: 'confluent'  },
@@ -210,23 +199,16 @@ const sources = [
   { company: 'Railway',   ats: 'ashby', ashbySlug: 'railway'    },
   { company: 'Render',    ats: 'ashby', ashbySlug: 'render'     },
   { company: 'Jellyfish', ats: 'ashby', ashbySlug: 'jellyfish'  },
-  { company: 'Vanta',     ats: 'ashby', ashbySlug: 'vanta'      },
-
-  // ── Eightfold ─────────────────────────────────────────────────────────────
-  { company: 'Qualcomm', ats: 'eightfold', eightfoldBase: 'https://qualcomm.eightfold.ai' },
+  { company: 'Vanta',         ats: 'ashby', ashbySlug: 'vanta'         },
+  { company: 'Juniper Square', ats: 'ashby', ashbySlug: 'junipersquare' },
+  { company: 'Docker',        ats: 'ashby', ashbySlug: 'docker'         },
 
   // ── SmartRecruiters ───────────────────────────────────────────────────────
-  { company: 'Canva',         ats: 'smartrecruiters', smartrecruitersSlug: 'Canva'       },
-  { company: 'Zomato',        ats: 'smartrecruiters', smartrecruitersSlug: 'Zomato1'     },
-  { company: 'Grab',          ats: 'smartrecruiters', smartrecruitersSlug: 'grab'        },
-  { company: 'Grafana',       ats: 'smartrecruiters', smartrecruitersSlug: 'Grafana'     },
-  { company: 'Freshworks',    ats: 'smartrecruiters', smartrecruitersSlug: 'Freshworks'  },
-  { company: 'HashiCorp',     ats: 'smartrecruiters', smartrecruitersSlug: 'HashiCorp'   },
-  { company: 'Thoughtworks',  ats: 'smartrecruiters', smartrecruitersSlug: 'Thoughtworks'},
-  { company: 'OLX Group',     ats: 'smartrecruiters', smartrecruitersSlug: 'olx'         },
-  { company: 'Nagarro',       ats: 'smartrecruiters', smartrecruitersSlug: 'Nagarro'     },
-  { company: 'Mambu',         ats: 'smartrecruiters', smartrecruitersSlug: 'Mambu'       },
-  { company: 'ServiceNow',    ats: 'smartrecruiters', smartrecruitersSlug: 'ServiceNow'  },
+  { company: 'Canva',      ats: 'smartrecruiters', smartrecruitersSlug: 'Canva'      },
+  { company: 'Zomato',     ats: 'smartrecruiters', smartrecruitersSlug: 'Zomato1'    },
+  { company: 'Grab',       ats: 'smartrecruiters', smartrecruitersSlug: 'grab'       },
+  { company: 'Freshworks', ats: 'smartrecruiters', smartrecruitersSlug: 'Freshworks' },
+  { company: 'ServiceNow', ats: 'smartrecruiters', smartrecruitersSlug: 'ServiceNow' },
 
   // ── Lever ─────────────────────────────────────────────────────────────────
   { company: 'Meesho',    ats: 'lever', leverToken: 'meesho'    },
@@ -234,6 +216,9 @@ const sources = [
   { company: 'Spotify',   ats: 'lever', leverToken: 'spotify'   },
   { company: 'Palantir',  ats: 'lever', leverToken: 'palantir'  },
   { company: 'Paytm',     ats: 'lever', leverToken: 'paytm'     },
+  { company: 'Netomi',    ats: 'lever', leverToken: 'netomi'    },
+  { company: 'Netflix',   ats: 'lever', leverToken: 'netflix'   },
+  { company: 'Atlassian', ats: 'lever', leverToken: 'atlassian' },
 
   // ── Taleo SSR ─────────────────────────────────────────────────────────────
   {
@@ -246,30 +231,6 @@ const sources = [
       title:    'h3 a',
       location: '.article__header__text__subtitle span:last-child',
       link:     'h3 a',
-    },
-  },
-  {
-    company:    'Intel',
-    ats:        'taleo-ssr',
-    baseUrl:    'https://jobs.intel.com',
-    searchPath: '/job-search-results/?from={offset}',
-    selectors:  {
-      card:     '.tile',
-      title:    '.job-title',
-      location: '.job-location',
-      link:     'a',
-    },
-  },
-  {
-    company:    'SAP Labs',
-    ats:        'taleo-ssr',
-    baseUrl:    'https://jobs.sap.com',
-    searchPath: '/search/?q=&startrow={offset}',
-    selectors:  {
-      card:     '.data-table tbody tr',
-      title:    '.jobTitle-link',
-      location: '.jobLocation',
-      link:     '.jobTitle-link',
     },
   },
 
