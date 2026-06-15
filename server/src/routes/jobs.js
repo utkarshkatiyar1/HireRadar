@@ -33,7 +33,7 @@ router.get('/', requireAuth, async (req, res) => {
 
     const [appliedIds, recentJobs] = await Promise.all([
       UserJobState.find({ userId, applied: true }, { jobId: 1 }).lean().then(r => r.map(s => s.jobId)),
-      Job.find({ firstSeen: { $gte: cutoff } }).sort({ firstSeen: -1 }).limit(2000).lean(),
+      Job.find({ date: { $gte: cutoff } }).sort({ date: -1 }).limit(2000).lean(),
     ]);
 
     // Merge in any applied jobs outside the cutoff window

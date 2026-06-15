@@ -8,7 +8,7 @@ const jobSchema = new mongoose.Schema(
     exp:        String,
     department: String,
     url:        { type: String, unique: true, required: true },
-    date:       { type: Date, default: Date.now },
+    date:       { type: Date, default: Date.now, index: true },
     applied:      { type: Boolean, default: false },
     appliedAt:    Date,
     dismissed:    { type: Boolean, default: false },

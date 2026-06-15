@@ -5,7 +5,7 @@ const FEATURES = [
   {
     icon: '🎯',
     title: 'One radar, every ATS',
-    body: 'Greenhouse, Lever, Workday, Ashby, Eightfold — 100+ companies polled every 2 hours.',
+    body: 'Greenhouse, Lever, Workday, Ashby, Eightfold — 800+ companies polled every 2 hours.',
   },
   {
     icon: '⚡',
@@ -58,7 +58,7 @@ export default function AuthScreen() {
             <span className="logo-text">HIRE·RADAR</span>
             <span className="auth-aside-tag">
               <span className="live-dot" />
-              Tracking 100+ companies · refreshing every 2h
+              Tracking 800+ companies · refreshing every 2h
             </span>
           </div>
 
