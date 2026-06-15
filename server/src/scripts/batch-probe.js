@@ -150,6 +150,29 @@ const VALIDATORS = {
     },
   },
 
+  eightfold: {
+    // Eightfold locked their JSON API (returns 401/404). Detect by HTTP fingerprint:
+    // valid tenants return 200 on /careers with eightfold-specific markup.
+    async check(token) {
+      const base = `https://${token}.eightfold.ai`;
+      try {
+        const { data, status } = await axios.get(`${base}/careers`, {
+          timeout: 10000,
+          headers: { 'User-Agent': UA },
+          validateStatus: s => s < 500,
+        });
+        if (status !== 200) return null;
+        if (typeof data !== 'string') return null;
+        // Eightfold fingerprint: vscdn.net font + _csrf meta
+        if (!data.includes('vscdn.net') || !data.includes('_csrf')) return null;
+        return {
+          config: { ats: 'eightfold', eightfoldBase: base, sourceType: 'ATS_STANDARD' },
+          jobCount: 1, // can't count without Playwright at probe time
+        };
+      } catch { return null; }
+    },
+  },
+
   workday: {
     // Workday needs 3 things: base URL (includes wd number), tenant slug, site name.
     // Strategy: try most common wd numbers × common site names, bail on first hit.

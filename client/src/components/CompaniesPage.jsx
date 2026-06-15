@@ -16,7 +16,17 @@ const ATS_META = {
 const meta = (ats) => ATS_META[ats] ?? { label: ats, color: '#94a3b8', bg: 'rgba(148,163,184,0.12)' };
 
 const exportSources = (sources) => {
-  const text = sources.map(s => s.company).sort().join('\n');
+  const seen = new Set();
+  const text = sources
+    .map(s => s.company)
+    .filter(name => {
+      const key = name.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .sort()
+    .join('\n');
   const blob = new Blob([text], { type: 'text/plain' });
   const url  = URL.createObjectURL(blob);
   const a    = document.createElement('a');
