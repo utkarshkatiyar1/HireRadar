@@ -15,7 +15,18 @@ const ATS_META = {
 
 const meta = (ats) => ATS_META[ats] ?? { label: ats, color: '#94a3b8', bg: 'rgba(148,163,184,0.12)' };
 
-export default function CompaniesPage() {
+const exportSources = (sources) => {
+  const text = sources.map(s => s.company).sort().join('\n');
+  const blob = new Blob([text], { type: 'text/plain' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = 'hirераdar-companies.txt';
+  a.click();
+  URL.revokeObjectURL(url);
+};
+
+export default function CompaniesPage({ isAdmin = false }) {
   const [sources, setSources] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch]   = useState('');
@@ -84,6 +95,11 @@ export default function CompaniesPage() {
           value={search}
           onChange={e => setSearch(e.target.value)}
         />
+        {isAdmin && (
+          <button className="cp-export-btn" onClick={() => exportSources(sources)} title="Export all company names as text">
+            Export
+          </button>
+        )}
       </div>
 
       {/* ── Result count ── */}

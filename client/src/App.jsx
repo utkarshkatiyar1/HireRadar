@@ -360,7 +360,7 @@ export default function App() {
       {/* ── Companies Page ── */}
       {page === 'companies' && (
         <main>
-          <CompaniesPage />
+          <CompaniesPage isAdmin={isAdmin} />
         </main>
       )}
 

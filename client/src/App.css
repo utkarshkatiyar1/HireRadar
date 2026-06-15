@@ -1280,6 +1280,23 @@ tbody tr.row-applied:hover td      { background: var(--teal-dim); opacity: 0.8; 
   box-shadow: 0 0 0 3px var(--violet-dim);
 }
 
+.cp-export-btn {
+  padding: 7px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--violet);
+  background: transparent;
+  color: var(--violet);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
+}
+.cp-export-btn:hover {
+  background: var(--violet);
+  color: #fff;
+}
+
 .cp-result-count {
   font-size: 0.7rem;
   font-weight: 600;
