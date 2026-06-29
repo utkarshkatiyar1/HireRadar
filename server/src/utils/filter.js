@@ -9,10 +9,9 @@ const DEFAULTS = {
     'mysore', 'thiruvananthapuram', 'trivandrum', 'ranchi', 'agra',
   ],
   seniorityExclude: [
-    'senior', ' sr ', 'sr.', 'staff', 'principal', 'lead ',
+    'senior', ' sr ', 'sr ', 'sr.', '(sr)', 'staff', 'principal', 'lead',
     'manager', 'director', 'vp ', 'vice president',
     'head of', 'architect', 'distinguished', 'fellow',
-    'tech lead', 'technical lead',
     'sales', 'account executive', 'account manager', 'business development',
     'recruiter', 'recruiting', 'talent acquisition',
     'marketing', 'finance', 'legal', 'counsel', 'operations',
@@ -46,8 +45,13 @@ const DEFAULTS = {
     'sre', 'database', 'network engineer', 'cloud ops',
     'android', 'ios', 'mobile engineer',
     'qa engineer', 'test engineer', 'sdet',
+    'java developer', 'java engineer', 'spring boot',
+    'python developer', 'python engineer', 'django', 'flask',
+    '.net developer', 'c# developer', 'dotnet',
+    'ruby', 'rails',
+    'cloud engineer', 'platform engineer',
   ],
-  scoreThreshold: 0,
+  scoreThreshold: 2,
 };
 
 const isLocationOk = (location, prefs = DEFAULTS) => {

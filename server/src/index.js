@@ -167,6 +167,7 @@ const ATS_CONCURRENCY = {
   workday:         3,
   eightfold:       2,
   'taleo-ssr':     2,
+  zohorecruit:     5,
   'custom-api':    5,
   playwright:      1,
 };

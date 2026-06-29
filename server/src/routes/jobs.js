@@ -1,7 +1,7 @@
 const router = require('express').Router();
 const mongoose = require('mongoose');
 const { Job, User, UserJobState, UserPrefs, Source } = require('../utils/db');
-const { isLocationOk, isSenior, scoreJob } = require('../utils/filter');
+const { isLocationOk, isSenior, scoreJob, DEFAULTS } = require('../utils/filter');
 const { requireAuth } = require('../middleware/auth');
 
 const oid = (s) => new mongoose.Types.ObjectId(s);
@@ -57,7 +57,7 @@ router.get('/', requireAuth, async (req, res) => {
       return res.json(locationOk.sort((a, b) => new Date(b.firstSeen) - new Date(a.firstSeen)));
     }
 
-    const threshold = prefs.scoreThreshold ?? 0;
+    const threshold = prefs.scoreThreshold ?? DEFAULTS.scoreThreshold;
     const jobs = locationOk
       .filter(j => !isSenior(j.title, prefs))
       .map(j => ({ ...j, score: scoreJob(j, prefs) }))
