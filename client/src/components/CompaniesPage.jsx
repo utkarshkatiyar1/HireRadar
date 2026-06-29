@@ -9,6 +9,7 @@ const ATS_META = {
   eightfold:       { label: 'Eightfold',       color: '#f472b6', bg: 'rgba(244,114,182,0.12)' },
   smartrecruiters: { label: 'SmartRecruiters', color: '#2dd4bf', bg: 'rgba(45,212,191,0.12)'  },
   'taleo-ssr':     { label: 'Taleo',           color: '#fbbf24', bg: 'rgba(251,191,36,0.12)'  },
+  zohorecruit:     { label: 'ZohoRecruit',     color: '#e8622a', bg: 'rgba(232,98,42,0.12)'   },
   'custom-api':    { label: 'Custom',          color: '#94a3b8', bg: 'rgba(148,163,184,0.12)' },
   playwright:      { label: 'Custom',          color: '#94a3b8', bg: 'rgba(148,163,184,0.12)' },
 };
