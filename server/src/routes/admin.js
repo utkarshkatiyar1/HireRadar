@@ -95,6 +95,25 @@ router.get('/queues', requireAdmin, async (_req, res) => {
   }
 });
 
+// POST /admin/applications/requeue-stuck — re-enqueues 'evaluate' jobs for
+// every Application still sitting in DISCOVERED. Recovery tool for the case
+// where discoverApplicationsForUser's insertMany succeeded but the follow-up
+// per-doc queue.add loop was interrupted (e.g. request timeout on a large
+// batch) — DISCOVERED docs exist with no matching BullMQ job ever created.
+// runEvaluation() no-ops for anything not still DISCOVERED, so re-adding a
+// job for an application some other in-flight job already advanced is safe.
+router.post('/applications/requeue-stuck', requireAdmin, async (req, res) => {
+  try {
+    const limit = Math.min(Number(req.body?.limit) || 10000, 10000);
+    const stuck = await Application.find({ status: 'DISCOVERED' }, { _id: 1 }).limit(limit).lean();
+    const queue = getPipelineQueue();
+    await Promise.all(stuck.map(a => queue.add('evaluate', { applicationId: a._id.toString() })));
+    res.json({ requeued: stuck.length });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ─── Source management ────────────────────────────────────────────────────────
 
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36';
