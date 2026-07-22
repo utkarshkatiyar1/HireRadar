@@ -3,7 +3,7 @@ services:
     name: hireradar-api
     runtime: node
     rootDir: server
-    buildCommand: npm install && PLAYWRIGHT_BROWSERS_PATH=/opt/render/project/.browsers npx playwright install chromium --with-deps
+    buildCommand: npm install && PLAYWRIGHT_BROWSERS_PATH=/opt/render/project/.browsers npx playwright install chromium
     startCommand: npm start
     plan: free
     envVars:
@@ -69,7 +69,7 @@ services:
     name: hireradar-apply-worker
     runtime: node
     rootDir: server
-    buildCommand: npm install && PLAYWRIGHT_BROWSERS_PATH=/opt/render/project/.browsers npx playwright install chromium --with-deps
+    buildCommand: npm install && PLAYWRIGHT_BROWSERS_PATH=/opt/render/project/.browsers npx playwright install chromium
     startCommand: npm run start:apply-worker
     plan: free
     envVars:
