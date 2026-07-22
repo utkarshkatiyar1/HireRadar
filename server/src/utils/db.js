@@ -16,6 +16,29 @@ const jobSchema = new mongoose.Schema(
     atsSearched:  { type: Boolean, default: false },
     firstSeen:  { type: Date, default: Date.now, index: true },
     lastSeen:   { type: Date, default: Date.now },
+
+    // Raw JD text — needed by the agent pipeline (eligibility/fit/answer agents).
+    // Not populated by existing scrapers; new source adapters populate it where available.
+    description: String,
+
+    // Recency verification — see server/src/utils/recency.js for extraction/confidence logic.
+    postedAt:           Date,
+    postedAtConfidence: { type: Number, default: 0.25 },
+    postedAtSource:      {
+      type: String,
+      enum: ['API', 'JSON_LD', 'VISIBLE_TEXT', 'SITEMAP_LASTMOD', 'URL_PATTERN', 'INFERRED'],
+      default: 'INFERRED',
+    },
+
+    // Canonicalisation / repost detection — see server/src/utils/canonicalize.js.
+    // identityHash: stable across minor JD edits (company+title+location+department).
+    // contentHash: fingerprints the JD body itself; changes when the JD text changes.
+    identityHash: { type: String, index: true },
+    contentHash:  { type: String, index: true },
+    firstSeenAt:  { type: Date, default: Date.now },
+    lastSeenAt:   { type: Date, default: Date.now },
+    refreshedAt:  Date,
+    status: { type: String, enum: ['ACTIVE', 'REFRESHED', 'EXPIRED'], default: 'ACTIVE' },
   },
   { timestamps: true }
 );
@@ -67,7 +90,14 @@ const UserPrefs = mongoose.model('UserPrefs', userPrefsSchema);
 const sourceSchema = new mongoose.Schema(
   {
     company:             { type: String, required: true, unique: true },
-    ats:                 { type: String, required: true },
+    // Required for ATS/custom sources; not applicable to the discovery-only
+    // source types (JSON_LD/RSS/SITEMAP/GENERIC_HTML), which have no "ATS".
+    ats:                 {
+      type: String,
+      required: function () {
+        return !['JSON_LD', 'RSS', 'SITEMAP', 'GENERIC_HTML'].includes(this.sourceType);
+      },
+    },
     enabled:             { type: Boolean, default: true },
     // ATS-specific
     scraperModule:       String,
@@ -89,7 +119,14 @@ const sourceSchema = new mongoose.Schema(
     locations:           [String],
     maxExp:              Number,
     // Source classification
-    sourceType:          { type: String, enum: ['ATS_STANDARD', 'ATS_WORKDAY', 'CUSTOM_JSON', 'CUSTOM_HTML'], default: 'ATS_STANDARD' },
+    // JSON_LD/RSS/SITEMAP/GENERIC_HTML route through scrapers/sources/ instead of ats/ or custom/.
+    // For GENERIC_HTML, `selectors` holds a declarative config:
+    //   { listUrl, selectors: { jobCard, title, location, url, postedAt } }
+    sourceType:          {
+      type: String,
+      enum: ['ATS_STANDARD', 'ATS_WORKDAY', 'CUSTOM_JSON', 'CUSTOM_HTML', 'JSON_LD', 'RSS', 'SITEMAP', 'GENERIC_HTML'],
+      default: 'ATS_STANDARD',
+    },
     // Health tracking — updated after every scrape
     lastJobCount:        { type: Number, default: null },
     lastScrapedAt:       { type: Date,   default: null },

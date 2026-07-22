@@ -2,19 +2,19 @@ import { useState, useEffect, useMemo } from 'react';
 import { authFetch } from '../auth';
 
 const ATS_META = {
-  greenhouse:      { label: 'Greenhouse',      color: '#4ade80', bg: 'rgba(74,222,128,0.12)'  },
-  lever:           { label: 'Lever',           color: '#fb923c', bg: 'rgba(251,146,60,0.12)'  },
-  workday:         { label: 'Workday',         color: '#60a5fa', bg: 'rgba(96,165,250,0.12)'  },
-  ashby:           { label: 'Ashby',           color: '#a78bfa', bg: 'rgba(167,139,250,0.12)' },
-  eightfold:       { label: 'Eightfold',       color: '#f472b6', bg: 'rgba(244,114,182,0.12)' },
-  smartrecruiters: { label: 'SmartRecruiters', color: '#2dd4bf', bg: 'rgba(45,212,191,0.12)'  },
-  'taleo-ssr':     { label: 'Taleo',           color: '#fbbf24', bg: 'rgba(251,191,36,0.12)'  },
-  zohorecruit:     { label: 'ZohoRecruit',     color: '#e8622a', bg: 'rgba(232,98,42,0.12)'   },
-  'custom-api':    { label: 'Custom',          color: '#94a3b8', bg: 'rgba(148,163,184,0.12)' },
-  playwright:      { label: 'Custom',          color: '#94a3b8', bg: 'rgba(148,163,184,0.12)' },
+  greenhouse:      { label: 'Greenhouse',      color: 'var(--ats-greenhouse)',      bg: 'var(--ats-greenhouse-bg)'      },
+  lever:           { label: 'Lever',           color: 'var(--ats-lever)',           bg: 'var(--ats-lever-bg)'           },
+  workday:         { label: 'Workday',         color: 'var(--ats-workday)',         bg: 'var(--ats-workday-bg)'         },
+  ashby:           { label: 'Ashby',           color: 'var(--ats-ashby)',           bg: 'var(--ats-ashby-bg)'           },
+  eightfold:       { label: 'Eightfold',       color: 'var(--ats-eightfold)',       bg: 'var(--ats-eightfold-bg)'       },
+  smartrecruiters: { label: 'SmartRecruiters', color: 'var(--ats-smartrecruiters)', bg: 'var(--ats-smartrecruiters-bg)' },
+  'taleo-ssr':     { label: 'Taleo',           color: 'var(--ats-taleo)',           bg: 'var(--ats-taleo-bg)'           },
+  zohorecruit:     { label: 'ZohoRecruit',     color: 'var(--ats-zohorecruit)',     bg: 'var(--ats-zohorecruit-bg)'     },
+  'custom-api':    { label: 'Custom',          color: 'var(--ats-custom)',          bg: 'var(--ats-custom-bg)'          },
+  playwright:      { label: 'Custom',          color: 'var(--ats-custom)',          bg: 'var(--ats-custom-bg)'          },
 };
 
-const meta = (ats) => ATS_META[ats] ?? { label: ats, color: '#94a3b8', bg: 'rgba(148,163,184,0.12)' };
+const meta = (ats) => ATS_META[ats] ?? { label: ats, color: 'var(--ats-custom)', bg: 'var(--ats-custom-bg)' };
 
 const exportSources = (sources) => {
   const seen = new Set();
@@ -38,17 +38,21 @@ const exportSources = (sources) => {
 };
 
 export default function CompaniesPage({ isAdmin = false }) {
-  const [sources, setSources] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [search, setSearch]   = useState('');
+  const [sources, setSources]   = useState([]);
+  const [loading, setLoading]   = useState(true);
+  const [err, setErr]           = useState(null);
+  const [search, setSearch]     = useState('');
   const [atsFilter, setAtsFilter] = useState('all');
 
-  useEffect(() => {
+  const load = () => {
+    setLoading(true); setErr(null);
     authFetch('/jobs/sources')
-      .then(r => r.json())
+      .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
       .then(data => { setSources(data); setLoading(false); })
-      .catch(() => setLoading(false));
-  }, []);
+      .catch(e => { setErr(e.message); setLoading(false); });
+  };
+
+  useEffect(() => { load(); }, []);
 
   const atsList = useMemo(() => {
     const seen = new Set();
@@ -64,7 +68,19 @@ export default function CompaniesPage({ isAdmin = false }) {
       .sort((a, b) => a.company.localeCompare(b.company));
   }, [sources, atsFilter, search]);
 
-  if (loading) return <p className="msg">Loading sources…</p>;
+  if (loading) return (
+    <div className="loading-pulse" style={{ padding: '32px 0' }}>
+      <div className="skeleton-row" />
+      <div className="skeleton-row" />
+      <div className="skeleton-row" />
+    </div>
+  );
+  if (err) return (
+    <div className="err-state">
+      <p className="msg error">Failed to load companies — {err}</p>
+      <button className="page-btn" onClick={load}>Try again</button>
+    </div>
+  );
 
   return (
     <div className="cp-page">

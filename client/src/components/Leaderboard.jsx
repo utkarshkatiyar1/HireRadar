@@ -50,12 +50,14 @@ function Podium({ rows, currentUserId }) {
 }
 
 export default function Leaderboard({ currentUserId }) {
-  const [rows, setRows] = useState([]);
+  const [rows, setRows]     = useState([]);
   const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState(null);
+  const [err, setErr]       = useState(null);
+  const [retryCount, setRetryCount] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
+    setLoading(true); setErr(null);
     const load = async () => {
       try {
         const r = await authFetch('/jobs/leaderboard');
@@ -71,7 +73,7 @@ export default function Leaderboard({ currentUserId }) {
     load();
     const id = setInterval(load, 60_000);
     return () => { cancelled = true; clearInterval(id); };
-  }, []);
+  }, [retryCount]);
 
   if (loading) {
     return (
@@ -84,7 +86,12 @@ export default function Leaderboard({ currentUserId }) {
       </div>
     );
   }
-  if (err) return <p className="msg error">Error: {err}</p>;
+  if (err) return (
+    <div className="err-state">
+      <p className="msg error">Error: {err}</p>
+      <button className="page-btn" onClick={() => setRetryCount(n => n + 1)}>Retry</button>
+    </div>
+  );
 
   if (!rows.length) {
     return (

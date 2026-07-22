@@ -15,3 +15,79 @@ services:
         sync: false
       - key: JWT_SECRET
         sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: SCREENSHOT_SIGNING_SECRET
+        sync: false
+
+  # Runs eligibility/fitScoring/resumeRouting/answerAgent/verifier — no
+  # Playwright here, deliberately isolated from apply-worker below so a
+  # browser crash/memory spike can never delay job evaluation.
+  #
+  # type: web (not worker) — Render's free tier only supports web services;
+  # this is a background BullMQ worker at heart, but exposes a trivial
+  # health endpoint (src/workers/healthServer.js) purely to satisfy that
+  # requirement. Needs its own UptimeRobot monitor (same as hireradar-api)
+  # or Render spins it down after 15 min idle — a pure BullMQ consumer with
+  # no inbound HTTP traffic of its own will never self-trigger a wake.
+  - type: web
+    name: hireradar-pipeline-worker
+    runtime: node
+    rootDir: server
+    buildCommand: npm install
+    startCommand: npm run start:pipeline-worker
+    plan: free
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: MONGO_URI
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: LLM_PROVIDER
+        value: gemini
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: LLM_MODEL_FAST
+        value: gemini-flash-lite-latest
+      - key: LLM_MODEL_QUALITY
+        value: gemini-flash-latest
+      - key: LLM_DAILY_REQUEST_LIMIT
+        value: "100"
+      - key: PIPELINE_CONCURRENCY
+        value: "3"
+
+  # Runs form-inspection + apply-adapters — the only service that launches a
+  # real Playwright browser for the agent pipeline (the scrape cron in the
+  # API service also uses Playwright for scraping, separately).
+  #
+  # type: web for the same free-tier reason as the pipeline worker above —
+  # needs its own UptimeRobot monitor too.
+  - type: web
+    name: hireradar-apply-worker
+    runtime: node
+    rootDir: server
+    buildCommand: npm install && PLAYWRIGHT_BROWSERS_PATH=/opt/render/project/.browsers npx playwright install chromium --with-deps
+    startCommand: npm run start:apply-worker
+    plan: free
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PLAYWRIGHT_BROWSERS_PATH
+        value: /opt/render/project/.browsers
+      - key: MONGO_URI
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: SCREENSHOT_SIGNING_SECRET
+        sync: false
+      - key: APPLY_DRY_RUN
+        value: "true"
+      - key: APPLY_CONCURRENCY
+        value: "1"
+      - key: INSPECTION_CONCURRENCY
+        value: "2"

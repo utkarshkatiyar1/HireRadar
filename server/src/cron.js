@@ -4,10 +4,13 @@ const express = require('express');
 const cors    = require('cors');
 const cron    = require('node-cron');
 const { connect, Job, UserJobState } = require('./utils/db');
-const jobsRouter    = require('./routes/jobs');
-const authRouter    = require('./routes/auth');
-const adminRouter   = require('./routes/admin');
-const profileRouter = require('./routes/profile');
+const jobsRouter             = require('./routes/jobs');
+const authRouter             = require('./routes/auth');
+const adminRouter            = require('./routes/admin');
+const profileRouter          = require('./routes/profile');
+const profileCandidateRouter = require('./routes/profile-candidate');
+const resumesRouter          = require('./routes/resumes');
+const applicationsRouter     = require('./routes/applications');
 const scrape      = require('./index');
 
 const app  = express();
@@ -19,6 +22,9 @@ app.use('/auth', authRouter);
 app.use('/jobs', jobsRouter);
 app.use('/admin', adminRouter);
 app.use('/profile', profileRouter);
+app.use('/profile', profileCandidateRouter);
+app.use('/resumes', resumesRouter);
+app.use('/applications', applicationsRouter);
 
 // Health check — UptimeRobot pings this to keep Render awake
 app.get('/health', (_req, res) => res.json({ ok: true }));

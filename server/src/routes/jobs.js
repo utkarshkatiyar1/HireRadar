@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 const { Job, User, UserJobState, UserPrefs, Source } = require('../utils/db');
 const { isLocationOk, isSenior, scoreJob, DEFAULTS } = require('../utils/filter');
 const { requireAuth } = require('../middleware/auth');
+const { effectivePostedAt } = require('../utils/recency');
 
 const oid = (s) => new mongoose.Types.ObjectId(s);
 
@@ -53,8 +54,15 @@ router.get('/', requireAuth, async (req, res) => {
     // Location filter always applies — even in raw mode
     const locationOk = withState.filter(j => isLocationOk(j.location, prefs));
 
+    // Recency-first ordering contract: verified postedAt beats firstSeen when
+    // confident (>=0.7), otherwise falls back to discovery time — so an
+    // inferred/low-confidence date can't leapfrog a verified one.
+    const byRecency = (a, b) =>
+      new Date(effectivePostedAt(b)) - new Date(effectivePostedAt(a))
+      || (b.postedAtConfidence ?? 0) - (a.postedAtConfidence ?? 0);
+
     if (req.query.raw === '1') {
-      return res.json(locationOk.sort((a, b) => new Date(b.firstSeen) - new Date(a.firstSeen)));
+      return res.json(locationOk.sort(byRecency));
     }
 
     const threshold = prefs.scoreThreshold ?? DEFAULTS.scoreThreshold;
@@ -62,7 +70,7 @@ router.get('/', requireAuth, async (req, res) => {
       .filter(j => !isSenior(j.title, prefs))
       .map(j => ({ ...j, score: scoreJob(j, prefs) }))
       .filter(j => j.score >= threshold)
-      .sort((a, b) => b.score - a.score || new Date(b.firstSeen) - new Date(a.firstSeen));
+      .sort((a, b) => byRecency(a, b) || b.score - a.score);
     res.json(jobs);
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -169,6 +177,29 @@ router.get('/leaderboard', requireAuth, async (_req, res) => {
       .slice(0, 50);
 
     res.json(rows);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /jobs/:id — single job detail, merged with the current user's applied/
+// dismissed state. Does NOT drop dismissed jobs like the list endpoint does
+// (mergeUserState) — a dismissed job's detail page must still be viewable
+// via direct/deep link, only the list view hides it. Declared AFTER the
+// specific routes above (/sources, /stats, /leaderboard) so this wildcard
+// never shadows them.
+router.get('/:id', requireAuth, async (req, res) => {
+  try {
+    const userId = oid(req.user.uid);
+    const job = await Job.findById(req.params.id).lean();
+    if (!job) return res.status(404).json({ error: 'Not found' });
+    const state = await UserJobState.findOne({ userId, jobId: job._id }).lean();
+    res.json({
+      ...job,
+      applied: !!state?.applied,
+      appliedAt: state?.appliedAt ?? null,
+      dismissed: !!state?.dismissed,
+    });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

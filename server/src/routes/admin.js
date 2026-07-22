@@ -5,6 +5,10 @@ const { SECRET } = require('../middleware/auth');
 const { subscribe, getBuffer, clearBuffer, ADMIN_EMAIL } = require('../utils/logger');
 const { Source } = require('../utils/db');
 const { DEFAULTS } = require('../config/sources');
+const PipelineConfig = require('../models/pipelineConfig');
+const { Application } = require('../models/application');
+const { transition, InvalidTransitionError } = require('../utils/applicationState');
+const { getPipelineQueue, getApplyQueue } = require('../queue/queues');
 
 let scrapeRunning = false;
 
@@ -259,6 +263,72 @@ router.delete('/sources/:company', requireAdmin, async (req, res) => {
     if (!r.deletedCount) return res.status(404).json({ error: 'Not found' });
     res.json({ ok: true });
   } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ─── Pipeline config (agent-pipeline operational settings) ───────────────────
+
+// GET /admin/pipeline-config — fetch the singleton config, auto-seeds defaults
+router.get('/pipeline-config', requireAdmin, async (_req, res) => {
+  try {
+    const config = await PipelineConfig.findOneAndUpdate(
+      { key: 'default' },
+      { $setOnInsert: { key: 'default' } },
+      { new: true, upsert: true }
+    ).lean();
+    res.json(config);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// PUT /admin/pipeline-config — update thresholds / allowAutoSubmit / etc.
+router.put('/pipeline-config', requireAdmin, async (req, res) => {
+  try {
+    const { confidenceThresholds, allowAutoSubmit, alwaysManualFields, models, maxApplicationsPerDayGlobal } = req.body;
+    const config = await PipelineConfig.findOneAndUpdate(
+      { key: 'default' },
+      { $set: {
+          ...(confidenceThresholds !== undefined && { confidenceThresholds }),
+          ...(allowAutoSubmit !== undefined && { allowAutoSubmit }),
+          ...(alwaysManualFields !== undefined && { alwaysManualFields }),
+          ...(models !== undefined && { models }),
+          ...(maxApplicationsPerDayGlobal !== undefined && { maxApplicationsPerDayGlobal }),
+      } },
+      { new: true, upsert: true }
+    );
+    res.json(config);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /admin/applications/:id/retry — re-run pipeline for a FAILED app, or
+// re-enqueue an apply job for a FAILED apply, or force re-evaluation of a
+// REJECTED one. Not user-triggerable — this is the ONLY way REJECTED can move.
+router.post('/applications/:id/retry', requireAdmin, async (req, res) => {
+  try {
+    const application = await Application.findById(req.params.id);
+    if (!application) return res.status(404).json({ error: 'Not found' });
+
+    if (application.status === 'REJECTED' || application.status === 'FAILED') {
+      const wasApplying = application.statusHistory.some(h => h.status === 'APPLYING')
+        && application.statusHistory[application.statusHistory.length - 1]?.status !== 'EVALUATING';
+      transition(application, 'EVALUATING', 'admin retry');
+      await application.save();
+      if (wasApplying) {
+        await getApplyQueue().add('submit', { applicationId: application._id.toString(), retried: true });
+      } else {
+        await getPipelineQueue().add('evaluate', { applicationId: application._id.toString(), retried: true });
+      }
+    } else {
+      return res.status(409).json({ error: `Cannot retry an application in status ${application.status}` });
+    }
+
+    res.json(application);
+  } catch (e) {
+    if (e instanceof InvalidTransitionError) return res.status(409).json({ error: e.message });
     res.status(500).json({ error: e.message });
   }
 });
