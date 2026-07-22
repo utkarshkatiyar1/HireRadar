@@ -2204,6 +2204,13 @@ tbody tr.row-applied:hover td      { background: var(--teal-dim); opacity: 0.8; 
   color: #90aec8;
   white-space: pre-wrap;
 }
+.terminal-service {
+  flex-shrink: 0;
+  color: #6b8cae;
+  font-size: 10px;
+  font-weight: 600;
+  user-select: none;
+}
 
 /* ── Global Mobile / Responsive ── */
 @media (max-width: 768px) {
@@ -2684,6 +2691,7 @@ tbody tr.row-applied:hover td      { background: var(--teal-dim); opacity: 0.8; 
 :root[data-theme="light"] .terminal-empty     { color: #3d6080; }
 :root[data-theme="light"] .terminal-ts        { color: #3d6080; }
 :root[data-theme="light"] .terminal-msg       { color: #8ab4d4; }
+:root[data-theme="light"] .terminal-service   { color: #4a6f94; }
 
 /* ── Light mode: contrast fixes ─────────────────────────────── */
 

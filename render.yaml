@@ -40,6 +40,8 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      - key: SERVICE_NAME
+        value: pipeline-worker
       - key: MONGO_URI
         sync: false
       - key: JWT_SECRET
@@ -75,6 +77,8 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      - key: SERVICE_NAME
+        value: apply-worker
       - key: PLAYWRIGHT_BROWSERS_PATH
         value: /opt/render/project/.browsers
       - key: MONGO_URI

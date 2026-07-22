@@ -1,4 +1,6 @@
 require('dotenv').config();
+process.env.SERVICE_NAME = process.env.SERVICE_NAME || 'apply-worker';
+require('../utils/logger'); // patch console so these logs relay into the API's admin Terminal
 const { Worker } = require('bullmq');
 const { connect } = require('../utils/db');
 const { getConnection } = require('../queue/connection');
@@ -36,6 +38,12 @@ async function start() {
     });
     worker.on('failed', (job, err) => {
       console.error(`[apply-worker:${name}] job ${job?.id} failed:`, err.message);
+    });
+    worker.on('error', (err) => {
+      console.error(`[apply-worker:${name}] worker error:`, err.message);
+    });
+    worker.on('ready', () => {
+      console.log(`[apply-worker:${name}] BullMQ worker ready — consuming queue`);
     });
   }
 

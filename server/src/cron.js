@@ -1,5 +1,6 @@
 require('dotenv').config();
-require('./utils/logger'); // patch console first
+const { startRemoteLogRelay } = require('./utils/logger'); // patch console first
+startRemoteLogRelay(); // merge pipeline-worker/apply-worker logs into this process's SSE stream
 const express = require('express');
 const cors    = require('cors');
 const cron    = require('node-cron');
