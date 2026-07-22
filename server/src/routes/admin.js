@@ -79,6 +79,22 @@ router.get('/scrape', requireAdmin, (_req, res) => {
   res.json({ running: scrapeRunning });
 });
 
+// GET /admin/queues — BullMQ job counts per queue (admin only). Diagnostic:
+// lets you tell "worker is down" apart from "jobs never reached this Redis".
+router.get('/queues', requireAdmin, async (_req, res) => {
+  try {
+    const { getPipelineQueue, getInspectionQueue, getApplyQueue } = require('../queue/queues');
+    const queues = { pipeline: getPipelineQueue(), inspection: getInspectionQueue(), apply: getApplyQueue() };
+    const counts = {};
+    for (const [name, q] of Object.entries(queues)) {
+      counts[name] = await q.getJobCounts('waiting', 'active', 'completed', 'failed', 'delayed');
+    }
+    res.json(counts);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ─── Source management ────────────────────────────────────────────────────────
 
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36';
