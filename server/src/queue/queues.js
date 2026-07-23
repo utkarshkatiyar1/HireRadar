@@ -10,18 +10,28 @@ const { getConnection } = require('./connection');
 //   Consumed by workers/apply-worker.js.
 let pipelineQueue, inspectionQueue, applyQueue;
 
+// Completed/failed jobs otherwise stay in Redis forever (BullMQ default),
+// each held job costing ongoing command overhead (getJobCounts, cleanup
+// scans, etc.) against Upstash's metered command quota. Capped retention
+// still leaves enough history for /admin/queues and debugging without
+// piling up thousands of jobs from bulk operations like requeue-stuck.
+const defaultJobOptions = {
+  removeOnComplete: { count: 500 },
+  removeOnFail: { count: 1000 },
+};
+
 const getPipelineQueue = () => {
-  if (!pipelineQueue) pipelineQueue = new Queue('pipeline', { connection: getConnection() });
+  if (!pipelineQueue) pipelineQueue = new Queue('pipeline', { connection: getConnection(), defaultJobOptions });
   return pipelineQueue;
 };
 
 const getInspectionQueue = () => {
-  if (!inspectionQueue) inspectionQueue = new Queue('inspection', { connection: getConnection() });
+  if (!inspectionQueue) inspectionQueue = new Queue('inspection', { connection: getConnection(), defaultJobOptions });
   return inspectionQueue;
 };
 
 const getApplyQueue = () => {
-  if (!applyQueue) applyQueue = new Queue('apply', { connection: getConnection() });
+  if (!applyQueue) applyQueue = new Queue('apply', { connection: getConnection(), defaultJobOptions });
   return applyQueue;
 };
 

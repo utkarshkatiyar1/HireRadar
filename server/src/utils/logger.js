@@ -45,7 +45,15 @@ const getPublisher = () => {
   return publisher || null;
 };
 
+// Only WARN/ERROR cross the Redis pub/sub relay — INFO is by far the highest
+// volume level (one line per job completion during a large backlog) and
+// counts against Upstash's metered command quota per PUBLISH. INFO still
+// prints locally and shows in Render's own per-service log viewer; it just
+// won't reach the in-app Terminal from the worker services.
+const RELAY_LEVELS = new Set(['WARN', 'ERROR']);
+
 const publish = (entry) => {
+  if (!RELAY_LEVELS.has(entry.level)) return;
   const conn = getPublisher();
   if (!conn) return;
   conn.publish(LOG_CHANNEL, JSON.stringify(entry)).catch(() => {});
@@ -56,7 +64,7 @@ const origLog   = console.log.bind(console);
 const origWarn  = console.warn.bind(console);
 const origError = console.error.bind(console);
 
-console.log   = (...a) => { origLog(...a);   publish(push('INFO',  a)); };
+console.log   = (...a) => { origLog(...a);   push('INFO',  a); };
 console.warn  = (...a) => { origWarn(...a);  publish(push('WARN',  a)); };
 console.error = (...a) => { origError(...a); publish(push('ERROR', a)); };
 
