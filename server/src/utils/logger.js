@@ -27,6 +27,13 @@ const push = (level, args, service = SERVICE_NAME) => {
 // route) can relay entries from the worker services too. Lazily requires
 // ioredis so environments without REDIS_URL configured (e.g. tests) don't
 // need a live connection just to log.
+// Bounded retries — see queue/connection.js's retryStrategy comment for why
+// this matters: without a cap, a blown Upstash command quota turns this
+// "occasional WARN/ERROR publish" client into an indefinite reconnect loop,
+// each attempt still metered even while rejected.
+const MAX_RETRY_ATTEMPTS = 10;
+const retryStrategy = (times) => (times > MAX_RETRY_ATTEMPTS ? null : Math.min(times * 500, 5000));
+
 let publisher = null;
 const getPublisher = () => {
   if (publisher === null) {
@@ -35,6 +42,7 @@ const getPublisher = () => {
       publisher = new IORedis(process.env.REDIS_URL || 'redis://localhost:6379', {
         maxRetriesPerRequest: null,
         lazyConnect: true,
+        retryStrategy,
       });
       publisher.connect().catch(() => {}); // errors surface via 'error' below, never crash logging
       publisher.on('error', () => {}); // swallow — logging must never throw
@@ -80,8 +88,10 @@ const startRemoteLogRelay = () => {
     const IORedis = require('ioredis');
     const sub = new IORedis(process.env.REDIS_URL || 'redis://localhost:6379', {
       maxRetriesPerRequest: null,
+      retryStrategy,
     });
     sub.on('error', (err) => origError('[logger] relay subscriber error:', err.message));
+    sub.on('end', () => origError('[logger] relay subscriber connection ended — retries exhausted'));
     sub.subscribe(LOG_CHANNEL).catch((err) => origError('[logger] relay subscribe failed:', err.message));
     sub.on('message', (_channel, raw) => {
       let entry;
