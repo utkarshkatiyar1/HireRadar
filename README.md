@@ -19,7 +19,7 @@ A multi-agent job-search product. It scrapes 800+ company career pages, ranks po
 - Tracks applications per user with streaks, weekly/monthly charts, and a leaderboard
 - Auto-scrapes every 2 hours via node-cron; admin can trigger manual scrapes
 - Real-time server log terminal (admin only) streamed over SSE
-- UptimeRobot pings each service's health endpoint every 5 min to keep Render's free tier awake
+- UptimeRobot pings the service's health endpoint every 5 min to keep Render's free tier awake
 
 ---
 
@@ -34,22 +34,18 @@ A multi-agent job-search product. It scrapes 800+ company career pages, ranks po
 | LLM | Google Gemini (`@google/genai`), behind a provider-neutral abstraction |
 | Scraping / Automation | Axios + Cheerio, Playwright (Chromium) |
 | Auth | JWT (bcrypt passwords) |
-| Hosting | Firebase Hosting (frontend), Render free tier (backend — 3 services) |
+| Hosting | Firebase Hosting (frontend), Render free tier (backend — 1 service) |
 | Scheduling | node-cron inside the API process |
 
 ---
 
-## Architecture — three backend services
+## Architecture — one merged backend service
 
-Render's free tier only supports `type: web`, not real background workers, so each logical role is a web service with a trivial health endpoint bolted on purely to satisfy that requirement.
+Everything runs in a single process/service (`hireradar-api`, entry point `src/cron.js`): the Express REST API, the scrape cron (every 2h), event-driven Application discovery after each scrape, and both BullMQ workers (pipeline evaluation + Playwright form-inspection/apply-adapters).
 
-| Service | Entry point | Does |
-|---|---|---|
-| `hireradar-api` | `src/cron.js` | Express REST API, scrape cron (every 2h), event-driven Application discovery after each scrape |
-| `hireradar-pipeline-worker` | `src/workers/pipeline-worker.js` | BullMQ consumer — eligibility, fit scoring, resume routing, answer drafting, verification. Zero Playwright, so a browser crash/memory spike can never delay evaluation |
-| `hireradar-apply-worker` | `src/workers/apply-worker.js` | BullMQ consumer — form inspection AND apply-adapter submission. The only service that opens a real browser for the agent pipeline |
+This used to be 3 separate Render services — API, `pipeline-worker`, `apply-worker` — deliberately split so a Playwright/Chromium crash or memory spike in the apply pipeline could never delay or take down job evaluation or the API. That isolation was real, but Render's free tier grants only **750 instance-hours per workspace per month**, shared across every service kept alive — and each service needed its own UptimeRobot monitor pinging every 5 min just to stop it spinning down after 15 min idle, so 3 always-on services cost roughly 3× a single service's worth of hours, blowing well past the 750h budget. Merged back into one service to fit the free tier; the trade-off is a Playwright OOM/crash can now take down the whole process (API included) rather than just the apply pipeline. Render auto-restarts a crashed process, so the practical cost is a brief availability blip, not data loss. Revisit (split back out, or move to a paid plan) if usage grows enough that this trade-off stops being acceptable.
 
-Locally, `npm run start:worker-dev` boots both workers in one process for convenience — no need to juggle three terminals while developing.
+Both workers are still plain importable `start()` functions (`src/workers/pipeline-worker.js`, `src/workers/apply-worker.js`) — `cron.js` just calls both alongside `app.listen()`. `npm run start:worker-dev` still exists for running just the two workers standalone (e.g. to test worker-only changes without the API), and each worker's own trivial health-check HTTP listener (`src/workers/healthServer.js`) still binds its own port (`PIPELINE_WORKER_PORT` / `APPLY_WORKER_PORT`) so the three listeners in one process don't collide — though only the main Express `/health` endpoint actually needs an UptimeRobot monitor now.
 
 ---
 
@@ -135,7 +131,7 @@ HireRadar/
 │           ├── applicationDiscovery.js
 │           └── screenshotSigning.js  # HMAC-signed, user-bound, short-lived screenshot URLs
 │
-└── render.yaml               # 3-service Blueprint (hireradar-api, hireradar-pipeline-worker, hireradar-apply-worker)
+└── render.yaml               # Single-service Blueprint (hireradar-api — API + cron + both BullMQ workers, in-process)
 ```
 
 ---
@@ -158,13 +154,15 @@ npm install
 npm run dev
 ```
 
-API runs on `http://localhost:5000`. To also run the agent pipeline locally:
+API runs on `http://localhost:5000` — `npm run dev` already starts both BullMQ workers in-process too (matches production topology), so no separate worker processes are needed.
+
+To run just the workers standalone (e.g. testing worker-only changes without the API):
 
 ```bash
 npm run start:worker-dev   # both pipeline-worker and apply-worker in one process
 ```
 
-Or run them as separate processes (matches production topology):
+Or as fully separate processes:
 
 ```bash
 npm run start:pipeline-worker
@@ -197,7 +195,7 @@ Runs on `http://localhost:3000`. The Vite proxy forwards API paths to port 5000.
 | `REDIS_URL` | BullMQ backend. Use `rediss://` (TLS) for Upstash |
 | `PIPELINE_CONCURRENCY` / `APPLY_CONCURRENCY` / `INSPECTION_CONCURRENCY` | Per-queue worker concurrency |
 | `APPLY_DRY_RUN` | `true` by default — dry-run always wins over any per-ATS auto-submit config. Adapters stop before the final submit click and write `DRY_RUN_COMPLETED`, never `SUBMITTED` |
-| `PIPELINE_WORKER_PORT` / `APPLY_WORKER_PORT` | Local-only — disambiguates each worker's health-check port from the API's `PORT` and from each other. Not needed on Render; each service there gets its own auto-injected `PORT` |
+| `PIPELINE_WORKER_PORT` / `APPLY_WORKER_PORT` | Disambiguates each in-process worker's own trivial health-check HTTP listener from the API's `PORT` and from each other, since all three now share one process/service |
 | `SCREENSHOT_SIGNING_SECRET` | HMAC secret for signed audit-trail screenshot URLs |
 | `LLM_PROVIDER` | Currently only `gemini` is registered |
 | `GEMINI_API_KEY` | Gemini API key |
@@ -224,25 +222,25 @@ npm run build
 firebase deploy --only hosting
 ```
 
-### Backend — Render (Blueprint, 3 services)
+### Backend — Render (Blueprint, single service)
 
-`render.yaml` defines all three services. Deploy via Render's **New → Blueprint** flow (not a plain per-service dashboard setup — a git push alone won't create new services unless the existing service is already Blueprint-linked).
+`render.yaml` defines the one `hireradar-api` service. Deploy via Render's **New → Blueprint** flow (not a plain per-service dashboard setup — a git push alone won't create new services unless the existing service is already Blueprint-linked).
 
-Each Playwright-using service's build command deliberately omits `--with-deps`:
+The build command deliberately omits `--with-deps`:
 ```
 npm install && PLAYWRIGHT_BROWSERS_PATH=/opt/render/project/.browsers npx playwright install chromium
 ```
 `--with-deps` requires root/`apt-get`, which Render's build sandbox doesn't grant — it fails with `su: Authentication failure` if added back.
 
-Set every `sync: false` env var (`MONGO_URI`, `JWT_SECRET`, `REDIS_URL`, `GEMINI_API_KEY`, `SCREENSHOT_SIGNING_SECRET`) per-service in the dashboard.
+Set every `sync: false` env var (`MONGO_URI`, `JWT_SECRET`, `REDIS_URL`, `GEMINI_API_KEY`, `SCREENSHOT_SIGNING_SECRET`) in the dashboard.
 
-Add an UptimeRobot HTTP(s) monitor per service (5 min interval) so none sleep after 15 min idle:
+Add one UptimeRobot HTTP(s) monitor (5 min interval) so the service doesn't sleep after 15 min idle:
 ```
 https://hireradar-api.onrender.com/health
-https://hireradar-pipeline-worker.onrender.com/
-https://hireradar-apply-worker.onrender.com/
 ```
 Don't point a monitor at `/jobs` — it requires auth and will always read as down.
+
+If migrating from the old 3-service split: delete the `hireradar-pipeline-worker` and `hireradar-apply-worker` services (and their UptimeRobot monitors) from the dashboard once the merged service is confirmed working — leaving them running idle still burns the shared 750h/month workspace budget.
 
 ---
 

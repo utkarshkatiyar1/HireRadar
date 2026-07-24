@@ -14,6 +14,19 @@ const resumesRouter          = require('./routes/resumes');
 const applicationsRouter     = require('./routes/applications');
 const scrape      = require('./index');
 
+// Render's free tier caps the whole workspace at 750 instance-hours/month,
+// shared across every service kept alive (UptimeRobot pings all 3 every 5
+// min specifically to stop them spinning down, so 3 separate always-on
+// services blow well past that combined). Merging the two BullMQ workers
+// into this same process/service cuts that back down to one. Trade-off:
+// apply-worker's Playwright/Chromium is the heaviest, crash-proneist thing
+// in this codebase, and it's no longer isolated from the Express API — a
+// browser OOM/crash can now take the whole process down, not just
+// job-application processing. Acceptable for now (solo user, APPLY_DRY_RUN
+// on, Render auto-restarts a crashed process) — revisit if usage grows.
+const startPipelineWorker = require('./workers/pipeline-worker');
+const startApplyWorker    = require('./workers/apply-worker');
+
 const app  = express();
 const PORT = process.env.PORT || 5000;
 
@@ -44,4 +57,10 @@ app.get('/health', (_req, res) => res.json({ ok: true }));
   });
 
   console.log('Cron scheduled — every 2 hours');
-})();
+
+  // Each worker's own healthServer binds PIPELINE_WORKER_PORT/APPLY_WORKER_PORT
+  // (distinct from this service's own PORT) — set those in this service's env
+  // so all three HTTP listeners don't collide on the same port.
+  await Promise.all([startPipelineWorker(), startApplyWorker()]);
+  console.log('Pipeline worker and apply worker started in-process');
+})().catch(e => { console.error('[cron] fatal startup error', e); process.exit(1); });

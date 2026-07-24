@@ -1,4 +1,16 @@
 services:
+  # Single merged service: Express API + scrape cron + both BullMQ workers
+  # (pipeline-worker, apply-worker) all run in this one process. Previously
+  # split across 3 Render services for isolation (a Playwright/Chromium
+  # crash in apply-worker couldn't take down job evaluation or the API) —
+  # merged back because Render's free tier grants only 750 instance-hours
+  # per WORKSPACE per month, shared across every service, and UptimeRobot
+  # pinging all 3 every 5 min to stop them spinning down meant ~3x730h/month
+  # combined, far past the 750h budget. Trade-off: a Playwright OOM/crash
+  # can now take the whole process down, not just the apply pipeline —
+  # acceptable while solo-user and APPLY_DRY_RUN=true; Render auto-restarts
+  # a crashed process. Revisit (split back out, or upgrade plan) if usage
+  # grows enough that Playwright crash frequency becomes a real problem.
   - type: web
     name: hireradar-api
     runtime: node
@@ -19,35 +31,6 @@ services:
         sync: false
       - key: SCREENSHOT_SIGNING_SECRET
         sync: false
-
-  # Runs eligibility/fitScoring/resumeRouting/answerAgent/verifier — no
-  # Playwright here, deliberately isolated from apply-worker below so a
-  # browser crash/memory spike can never delay job evaluation.
-  #
-  # type: web (not worker) — Render's free tier only supports web services;
-  # this is a background BullMQ worker at heart, but exposes a trivial
-  # health endpoint (src/workers/healthServer.js) purely to satisfy that
-  # requirement. Needs its own UptimeRobot monitor (same as hireradar-api)
-  # or Render spins it down after 15 min idle — a pure BullMQ consumer with
-  # no inbound HTTP traffic of its own will never self-trigger a wake.
-  - type: web
-    name: hireradar-pipeline-worker
-    runtime: node
-    rootDir: server
-    buildCommand: npm install
-    startCommand: npm run start:pipeline-worker
-    plan: free
-    envVars:
-      - key: NODE_ENV
-        value: production
-      - key: SERVICE_NAME
-        value: pipeline-worker
-      - key: MONGO_URI
-        sync: false
-      - key: JWT_SECRET
-        sync: false
-      - key: REDIS_URL
-        sync: false
       - key: LLM_PROVIDER
         value: gemini
       - key: GEMINI_API_KEY
@@ -60,38 +43,16 @@ services:
         value: "100"
       - key: PIPELINE_CONCURRENCY
         value: "3"
-
-  # Runs form-inspection + apply-adapters — the only service that launches a
-  # real Playwright browser for the agent pipeline (the scrape cron in the
-  # API service also uses Playwright for scraping, separately).
-  #
-  # type: web for the same free-tier reason as the pipeline worker above —
-  # needs its own UptimeRobot monitor too.
-  - type: web
-    name: hireradar-apply-worker
-    runtime: node
-    rootDir: server
-    buildCommand: npm install && PLAYWRIGHT_BROWSERS_PATH=/opt/render/project/.browsers npx playwright install chromium
-    startCommand: npm run start:apply-worker
-    plan: free
-    envVars:
-      - key: NODE_ENV
-        value: production
-      - key: SERVICE_NAME
-        value: apply-worker
-      - key: PLAYWRIGHT_BROWSERS_PATH
-        value: /opt/render/project/.browsers
-      - key: MONGO_URI
-        sync: false
-      - key: JWT_SECRET
-        sync: false
-      - key: REDIS_URL
-        sync: false
-      - key: SCREENSHOT_SIGNING_SECRET
-        sync: false
       - key: APPLY_DRY_RUN
         value: "true"
       - key: APPLY_CONCURRENCY
         value: "1"
       - key: INSPECTION_CONCURRENCY
         value: "2"
+      # Distinct from this service's own Render-injected PORT (Express/API) —
+      # each in-process worker's trivial health HTTP listener needs its own
+      # port so the three .listen() calls in this one process don't collide.
+      - key: PIPELINE_WORKER_PORT
+        value: "10001"
+      - key: APPLY_WORKER_PORT
+        value: "10002"
