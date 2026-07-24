@@ -1,6 +1,11 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useApplications } from '../hooks/useApplications';
+import { authFetch } from '../auth';
+
+// Matches ApplicationDetail.jsx's own guard for when Skip is offered — once
+// an application reaches one of these, skipping no longer makes sense.
+const SKIPPABLE_EXCLUDE = new Set(['SUBMITTED', 'SKIPPED', 'REJECTED', 'CANCELLED']);
 
 const BUCKETS = {
   needsAction: { label: 'Needs Action', statuses: ['READY_FOR_APPROVAL', 'ACTION_REQUIRED'] },
@@ -22,28 +27,68 @@ const STATUS_LABEL = {
   CANCELLED: 'Cancelled', EXPIRED: 'Expired', FAILED: 'Failed',
 };
 
+const PAGE_SIZE = 50;
+
 export default function ApprovalQueuePage() {
   const [bucket, setBucket] = useState('needsAction');
+  const [page, setPage] = useState(1);
+  const [skipping, setSkipping] = useState(() => new Set());
   const statusParam = BUCKETS[bucket].statuses.join(',');
-  const { applications, total, loading, err, refetch } = useApplications({ status: statusParam });
+  const { applications, total, loading, err, refetch } = useApplications({ status: statusParam, page, limit: PAGE_SIZE });
+
+  const selectBucket = (key) => {
+    setBucket(key);
+    setPage(1);
+  };
+
+  const handleSkip = async (e, id) => {
+    e.preventDefault(); // row is a <Link> — don't navigate
+    e.stopPropagation();
+    if (skipping.has(id)) return;
+    setSkipping(prev => new Set(prev).add(id));
+    try {
+      await authFetch(`/applications/${id}/skip`, { method: 'POST' });
+      refetch();
+    } finally {
+      setSkipping(prev => { const next = new Set(prev); next.delete(id); return next; });
+    }
+  };
+
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const rangeStart = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
+  const rangeEnd = Math.min(page * PAGE_SIZE, total);
 
   return (
     <main>
       <div className="filter-bar">
         <div className="status-tabs">
           {Object.entries(BUCKETS).map(([key, { label }]) => (
-            <button key={key} className={`status-tab${bucket === key ? ' active' : ''}`} onClick={() => setBucket(key)}>
+            <button key={key} className={`status-tab${bucket === key ? ' active' : ''}`} onClick={() => selectBucket(key)}>
               {label}
             </button>
           ))}
         </div>
         <div className="filter-right">
-          <span className="result-count">{loading ? '…' : `${total} result${total !== 1 ? 's' : ''}`}</span>
+          <span className="result-count">
+            {loading ? '…' : total === 0 ? '0 results' : `${rangeStart}–${rangeEnd} of ${total}`}
+          </span>
           <button className={`refresh-btn${loading ? ' spinning' : ''}`} onClick={refetch} disabled={loading} title="Refetch">
             <span className="spin-icon">↻</span>
           </button>
         </div>
       </div>
+
+      {!loading && !err && total > PAGE_SIZE && (
+        <div className="pagination">
+          <button className="page-btn" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1}>
+            ← Prev
+          </button>
+          <span className="page-info">Page {page} of {totalPages}</span>
+          <button className="page-btn" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page >= totalPages}>
+            Next →
+          </button>
+        </div>
+      )}
 
       {loading && (
         <div className="loading-pulse">
@@ -90,9 +135,31 @@ export default function ApprovalQueuePage() {
                   </span>
                 )}
                 <span className="aq-status">{STATUS_LABEL[app.status] || app.status}</span>
+                {!SKIPPABLE_EXCLUDE.has(app.status) && (
+                  <button
+                    className="aq-skip-btn"
+                    onClick={(e) => handleSkip(e, app._id)}
+                    disabled={skipping.has(app._id)}
+                    title="Skip — pass on this role"
+                  >
+                    ✕
+                  </button>
+                )}
               </div>
             </Link>
           ))}
+        </div>
+      )}
+
+      {!loading && !err && total > PAGE_SIZE && (
+        <div className="pagination">
+          <button className="page-btn" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1}>
+            ← Prev
+          </button>
+          <span className="page-info">Page {page} of {totalPages}</span>
+          <button className="page-btn" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page >= totalPages}>
+            Next →
+          </button>
         </div>
       )}
     </main>
