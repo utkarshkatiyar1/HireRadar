@@ -1,19 +1,24 @@
 const BUFFER_SIZE = 500;
 const ADMIN_EMAIL = 'utkarshkatiyar688@gmail.com';
-const LOG_CHANNEL = 'hireradar:logs';
-// SERVICE_NAME lets multi-service log entries (this process's own, plus any
-// relayed over Redis pub/sub from the worker services) be told apart in the
-// admin Terminal UI. Render sets RENDER_SERVICE_NAME per service in production.
-const SERVICE_NAME = process.env.RENDER_SERVICE_NAME || process.env.SERVICE_NAME || 'api';
 
+// Local-only in-memory log buffer + SSE fan-out. Used to relay logs from the
+// pipeline-worker/apply-worker over Redis pub/sub back when they ran as
+// separate Render services — that's no longer needed since all three now
+// run in this one process (see cron.js), so their console.log calls already
+// land in this same buffer directly. The Redis relay was removed after it
+// caused two separate incidents: an unbounded reconnect loop during a Redis
+// outage, and then (even after capping reconnect retries) a feedback loop
+// where a failed PUBLISH got logged via the patched console.error, which
+// tried to PUBLISH that error, which failed and got logged again — climbing
+// unboundedly until the metered command quota was exhausted. Keeping this
+// local-only removes that entire class of risk.
 const buffer = [];
 const clients = new Set();
 
-const push = (level, args, service = SERVICE_NAME) => {
+const push = (level, args) => {
   const entry = {
     ts: new Date().toISOString(),
     level,
-    service,
     msg: args.map(a => (typeof a === 'string' ? a : JSON.stringify(a))).join(' '),
   };
   buffer.push(entry);
@@ -22,89 +27,14 @@ const push = (level, args, service = SERVICE_NAME) => {
   return entry;
 };
 
-// Publisher — every process (API + both workers) publishes its own log
-// entries here so the API process (the only one with the SSE /admin/logs
-// route) can relay entries from the worker services too. Lazily requires
-// ioredis so environments without REDIS_URL configured (e.g. tests) don't
-// need a live connection just to log.
-// Bounded retries — see queue/connection.js's retryStrategy comment for why
-// this matters: without a cap, a blown Upstash command quota turns this
-// "occasional WARN/ERROR publish" client into an indefinite reconnect loop,
-// each attempt still metered even while rejected.
-const MAX_RETRY_ATTEMPTS = 10;
-const retryStrategy = (times) => (times > MAX_RETRY_ATTEMPTS ? null : Math.min(times * 500, 5000));
-
-let publisher = null;
-const getPublisher = () => {
-  if (publisher === null) {
-    try {
-      const IORedis = require('ioredis');
-      publisher = new IORedis(process.env.REDIS_URL || 'redis://localhost:6379', {
-        maxRetriesPerRequest: null,
-        lazyConnect: true,
-        retryStrategy,
-      });
-      publisher.connect().catch(() => {}); // errors surface via 'error' below, never crash logging
-      publisher.on('error', () => {}); // swallow — logging must never throw
-    } catch {
-      publisher = false; // ioredis unavailable — logging stays local-only
-    }
-  }
-  return publisher || null;
-};
-
-// Only WARN/ERROR cross the Redis pub/sub relay — INFO is by far the highest
-// volume level (one line per job completion during a large backlog) and
-// counts against Upstash's metered command quota per PUBLISH. INFO still
-// prints locally and shows in Render's own per-service log viewer; it just
-// won't reach the in-app Terminal from the worker services.
-const RELAY_LEVELS = new Set(['WARN', 'ERROR']);
-
-const publish = (entry) => {
-  if (!RELAY_LEVELS.has(entry.level)) return;
-  const conn = getPublisher();
-  if (!conn) return;
-  conn.publish(LOG_CHANNEL, JSON.stringify(entry)).catch(() => {});
-};
-
 // Patch console methods
 const origLog   = console.log.bind(console);
 const origWarn  = console.warn.bind(console);
 const origError = console.error.bind(console);
 
 console.log   = (...a) => { origLog(...a);   push('INFO',  a); };
-console.warn  = (...a) => { origWarn(...a);  publish(push('WARN',  a)); };
-console.error = (...a) => { origError(...a); publish(push('ERROR', a)); };
-
-// Subscriber — only meaningful in the API process, which owns the SSE route.
-// A dedicated connection is required: once a Redis connection issues
-// SUBSCRIBE it can only be used for pub/sub commands, so it must never be
-// the same connection BullMQ or the publisher above uses for other commands.
-let subscriberStarted = false;
-const startRemoteLogRelay = () => {
-  if (subscriberStarted) return;
-  subscriberStarted = true;
-  try {
-    const IORedis = require('ioredis');
-    const sub = new IORedis(process.env.REDIS_URL || 'redis://localhost:6379', {
-      maxRetriesPerRequest: null,
-      retryStrategy,
-    });
-    sub.on('error', (err) => origError('[logger] relay subscriber error:', err.message));
-    sub.on('end', () => origError('[logger] relay subscriber connection ended — retries exhausted'));
-    sub.subscribe(LOG_CHANNEL).catch((err) => origError('[logger] relay subscribe failed:', err.message));
-    sub.on('message', (_channel, raw) => {
-      let entry;
-      try { entry = JSON.parse(raw); } catch { return; }
-      if (entry.service === SERVICE_NAME) return; // already pushed locally by push() above
-      buffer.push(entry);
-      if (buffer.length > BUFFER_SIZE) buffer.shift();
-      for (const send of clients) send(entry);
-    });
-  } catch (err) {
-    origError('[logger] failed to start remote log relay:', err.message);
-  }
-};
+console.warn  = (...a) => { origWarn(...a);  push('WARN',  a); };
+console.error = (...a) => { origError(...a); push('ERROR', a); };
 
 const subscribe = (send) => {
   clients.add(send);
@@ -115,4 +45,4 @@ const getBuffer = () => [...buffer];
 
 const clearBuffer = () => { buffer.length = 0; };
 
-module.exports = { subscribe, getBuffer, clearBuffer, ADMIN_EMAIL, startRemoteLogRelay };
+module.exports = { subscribe, getBuffer, clearBuffer, ADMIN_EMAIL };
