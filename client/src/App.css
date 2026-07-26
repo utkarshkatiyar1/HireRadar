@@ -3798,6 +3798,67 @@ tbody tr.row-applied:hover td      { background: var(--teal-dim); opacity: 0.8; 
 .aq-timeline-step.done .aq-timeline-dot { background: var(--teal); }
 .aq-timeline-step.current .aq-timeline-dot { background: var(--violet); box-shadow: 0 0 0 3px var(--violet-dim); }
 
+/* ── Application detail: real statusHistory log (replaces the old fixed
+   happy-path .aq-timeline above — kept for now, unused) ──────────────── */
+.aq-history {
+  display: flex;
+  flex-direction: column;
+}
+.aq-history-entry {
+  display: flex;
+  gap: 12px;
+}
+.aq-history-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex-shrink: 0;
+  width: 10px;
+}
+.aq-history-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  flex-shrink: 0;
+  margin-top: 3px;
+}
+.aq-history-line {
+  flex: 1;
+  width: 2px;
+  background: var(--border);
+  margin: 2px 0;
+  min-height: 20px;
+}
+.aq-history-body {
+  flex: 1;
+  padding-bottom: 18px;
+  min-width: 0;
+}
+.aq-history-top {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.aq-history-status {
+  font-weight: 700;
+  font-size: 0.85rem;
+  color: var(--text-1);
+  text-transform: capitalize;
+}
+.aq-history-entry.current .aq-history-status { color: var(--violet); }
+.aq-history-time {
+  font-size: 0.72rem;
+  color: var(--text-4);
+  white-space: nowrap;
+}
+.aq-history-note {
+  margin-top: 3px;
+  font-size: 0.8rem;
+  color: var(--text-2);
+  line-height: 1.4;
+}
+
 .aq-section { display: flex; flex-direction: column; gap: 8px; }
 .aq-section-title { font-weight: 700; color: var(--text-1); font-size: 0.85rem; }
 .aq-reasons { padding-left: 18px; color: var(--text-2); font-size: 0.82rem; }

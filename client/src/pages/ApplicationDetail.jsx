@@ -6,11 +6,6 @@ import ActionRequiredResolver from '../components/ActionRequiredResolver';
 const TIER_COLOR = { AUTO: '#22c55e', QUICK_APPROVE: '#2dd4bf', DRAFT_ONLY: '#f97316', MANUAL: '#f87171' };
 const VERIFIER_COLOR = { ok: '#22c55e', unsupported: '#f87171', needs_review: '#f97316' };
 
-const STATE_STEPS = [
-  'DISCOVERED', 'EVALUATING', 'READY_FOR_PREPARATION', 'INSPECTING_FORM', 'PREPARING',
-  'READY_FOR_APPROVAL', 'APPROVED', 'APPLYING', 'SUBMITTED',
-];
-
 // Plain-language explanation of what's actually happening at each status —
 // the raw enum name (e.g. "EVALUATING") doesn't tell a reader whether it's
 // something automatic they should just wait on, or something waiting on them.
@@ -34,6 +29,17 @@ const STATUS_EXPLANATION = {
   EXPIRED: 'This posting is no longer open — it was likely taken down after being scraped.',
   FAILED: 'Something went wrong in the pipeline. An admin retry is needed to move it forward again.',
 };
+
+// Dot color per reached status — green for real progress, red for anything
+// that stopped the pipeline, orange for "needs you", grey for neutral/
+// terminal-by-choice. Statuses not listed fall back to neutral grey.
+const HISTORY_DOT_COLOR = {
+  REJECTED: '#f87171', FAILED: '#f87171', SUBMISSION_BLOCKED: '#f87171', SUBMISSION_UNCONFIRMED: '#f87171', EXPIRED: '#f87171',
+  ACTION_REQUIRED: '#f97316',
+  SKIPPED: '#94a3b8', CANCELLED: '#94a3b8',
+  SUBMITTED: '#22c55e', DRY_RUN_COMPLETED: '#22c55e', APPROVED: '#22c55e',
+};
+const DEFAULT_DOT_COLOR = 'var(--violet)';
 
 const fmtDate = (d) => {
   if (!d) return null;
@@ -123,8 +129,6 @@ export default function ApplicationDetail() {
     );
   }
 
-  const stepIndex = STATE_STEPS.indexOf(app.status);
-
   return (
     <main>
       <Link to="/applications" className="page-btn" style={{ marginBottom: 16, display: 'inline-block' }}>← Back to Applications</Link>
@@ -164,35 +168,37 @@ export default function ApplicationDetail() {
           {app.fitScore?.total != null && <span className="aq-score aq-score-lg">{app.fitScore.total}%</span>}
         </div>
 
-        {/* State timeline — each reached step shows when it happened, sourced
-            from statusHistory (first match, since a status can in principle
-            be re-entered, e.g. REJECTED -> EVALUATING via admin retry). */}
-        {stepIndex >= 0 && (
-          <div className="aq-timeline">
-            {STATE_STEPS.map((s, i) => {
-              const reachedAt = app.statusHistory?.find(h => h.status === s)?.at;
+        {/* Real history log — every actual statusHistory transition, in
+            order, with its own timestamp and note (the pipeline already
+            writes rich context here, e.g. "fitScore 10 below policy
+            minimumScore 65" — previously captured but never shown anywhere).
+            Replaces a fixed happy-path step list that had no way to
+            represent REJECTED/ACTION_REQUIRED/etc., hid timestamps behind
+            hover-only tooltips, and silently dropped re-entered statuses
+            (e.g. an admin retry from REJECTED back to EVALUATING). */}
+        {app.statusHistory?.length > 0 && (
+          <div className="aq-history">
+            {[...app.statusHistory].reverse().map((h, i) => {
+              const isCurrent = i === 0;
+              const dotColor = HISTORY_DOT_COLOR[h.status] || DEFAULT_DOT_COLOR;
               return (
-                <div
-                  key={s}
-                  className={`aq-timeline-step${i <= stepIndex ? ' done' : ''}${i === stepIndex ? ' current' : ''}`}
-                  title={reachedAt ? fmtDateTime(reachedAt) : undefined}
-                >
-                  <span className="aq-timeline-dot" />
-                  <span className="aq-timeline-label">{s.replace(/_/g, ' ')}</span>
+                <div key={h._id || i} className={`aq-history-entry${isCurrent ? ' current' : ''}`}>
+                  <div className="aq-history-rail">
+                    <span className="aq-history-dot" style={{ background: dotColor, boxShadow: isCurrent ? `0 0 0 3px ${dotColor}33` : 'none' }} />
+                    {i < app.statusHistory.length - 1 && <span className="aq-history-line" />}
+                  </div>
+                  <div className="aq-history-body">
+                    <div className="aq-history-top">
+                      <span className="aq-history-status">{h.status.replace(/_/g, ' ')}</span>
+                      <span className="aq-history-time">{fmtDateTime(h.at)}</span>
+                    </div>
+                    <p className="aq-history-note">{h.note || STATUS_EXPLANATION[h.status] || ''}</p>
+                  </div>
                 </div>
               );
             })}
           </div>
         )}
-        {stepIndex < 0 && <div className="aq-status-badge">{app.status.replace(/_/g, ' ')}</div>}
-        {(() => {
-          const lastHistory = app.statusHistory?.[app.statusHistory.length - 1];
-          return lastHistory?.at ? (
-            <p className="aq-row-sub" style={{ fontSize: '0.75rem', marginTop: -6 }}>
-              Last updated {fmtDateTime(lastHistory.at)}
-            </p>
-          ) : null;
-        })()}
 
         {STATUS_EXPLANATION[app.status] && (
           <p className="aq-row-sub" style={{ marginTop: -8 }}>{STATUS_EXPLANATION[app.status]}</p>

@@ -43,10 +43,22 @@ router.get('/', requireAuth, async (req, res) => {
       new Date(effectivePostedAt(b.job)) - new Date(effectivePostedAt(a.job))
       || (b.job.postedAtConfidence ?? 0) - (a.job.postedAtConfidence ?? 0);
     const byScore = (a, b) => (b.fitScore?.total ?? 0) - (a.fitScore?.total ?? 0);
+    // The APPLICATION's own last change (statusHistory), not the underlying
+    // job's posting date — 'recent' answers "what job was posted most
+    // recently", which is the wrong axis for buckets like Issues/Done where
+    // you want "what did the pipeline touch most recently". Client-side
+    // re-sorting the already-paginated 'recent' page can't fix this: the
+    // truly-latest-changed application might not even be on that page.
+    const lastChangedAt = (a) => {
+      const lastHistory = a.statusHistory?.[a.statusHistory.length - 1];
+      return new Date(lastHistory?.at || a.updatedAt || 0);
+    };
+    const byUpdatedRecency = (a, b) => lastChangedAt(b) - lastChangedAt(a);
 
     if (sort === 'best_match') merged.sort((a, b) => byScore(a, b) || byRecency(a, b));
     else if (sort === 'recent_high_match') merged.sort((a, b) => byRecency(a, b) || byScore(a, b));
     else if (sort === 'easy_apply') merged.sort((a, b) => (a.formInspection?.fields?.length ?? 99) - (b.formInspection?.fields?.length ?? 99) || byRecency(a, b));
+    else if (sort === 'updated_recent') merged.sort(byUpdatedRecency);
     else merged.sort(byRecency); // 'recent' (default)
 
     const pageNum = Math.max(1, Number(page));

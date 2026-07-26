@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useApplications } from '../hooks/useApplications';
 import { authFetch } from '../auth';
@@ -25,18 +25,20 @@ const SKIPPABLE_EXCLUDE = new Set([
 // other bucket stays chronological (its default, 'recent'), since ordering
 // by score doesn't mean much for something you already submitted or that
 // the pipeline rejected.
-// resortByOwnTimestamp: the server's 'recent' sort orders by the JOB's
-// posting date (effectivePostedAt) — for Done/Issues that's the wrong axis
-// entirely, you want most-recently-SUBMITTED or most-recently-failed first,
-// not "whichever job was posted most recently". No backend sort mode exists
-// for "the application's own last status change", so these two buckets
-// re-sort client-side over the fetched page using the same rowTimestamp()
-// already computed for the per-row relative-time display below.
+// 'updated_recent' (routes/applications.js) sorts by the APPLICATION's own
+// last statusHistory change, not the job's posting date — for Done/Issues
+// that's the axis that actually matters (most-recently-submitted, most-
+// recently-failed), and unlike a client-side re-sort it's correct across the
+// FULL result set before pagination, not just whatever page 'recent' would
+// have handed back. A client-side re-sort was tried first and was wrong: it
+// can only reorder the page it already fetched, so a job rejected moments
+// ago could sit unseen on some later page while stale older ones showed on
+// page 1.
 const BUCKETS = {
   needsAction: { label: 'Needs Action', statuses: ['READY_FOR_PREPARATION', 'READY_FOR_APPROVAL', 'ACTION_REQUIRED', 'DRY_RUN_COMPLETED'], sort: 'best_match' },
-  inProgress:  { label: 'In Progress',  statuses: ['DISCOVERED', 'EVALUATING', 'INSPECTING_FORM', 'PREPARING', 'APPROVED', 'APPLYING'] },
-  done:        { label: 'Done',         statuses: ['SUBMITTED'], resortByOwnTimestamp: true },
-  issues:      { label: 'Issues',       statuses: ['REJECTED', 'FAILED', 'SUBMISSION_UNCONFIRMED', 'SUBMISSION_BLOCKED'], resortByOwnTimestamp: true },
+  inProgress:  { label: 'In Progress',  statuses: ['DISCOVERED', 'EVALUATING', 'INSPECTING_FORM', 'PREPARING', 'APPROVED', 'APPLYING'], sort: 'updated_recent' },
+  done:        { label: 'Done',         statuses: ['SUBMITTED'], sort: 'updated_recent' },
+  issues:      { label: 'Issues',       statuses: ['REJECTED', 'FAILED', 'SUBMISSION_UNCONFIRMED', 'SUBMISSION_BLOCKED'], sort: 'updated_recent' },
 };
 
 const TIER_COLOR = {
@@ -93,11 +95,6 @@ export default function ApprovalQueuePage() {
   const statusParam = BUCKETS[bucket].statuses.join(',');
   const sort = BUCKETS[bucket].sort || 'recent';
   const { applications, total, loading, err, refetch } = useApplications({ status: statusParam, sort, page, limit: PAGE_SIZE });
-
-  const displayedApplications = useMemo(() => {
-    if (!BUCKETS[bucket].resortByOwnTimestamp) return applications;
-    return [...applications].sort((a, b) => new Date(rowTimestamp(b)) - new Date(rowTimestamp(a)));
-  }, [applications, bucket]);
 
   const selectBucket = (key) => {
     setBucket(key);
@@ -184,7 +181,7 @@ export default function ApprovalQueuePage() {
         </div>
       )}
 
-      {!loading && !err && displayedApplications.length === 0 && (
+      {!loading && !err && applications.length === 0 && (
         <div className="empty">
           <div className="empty-icon">📋</div>
           <p className="empty-title">Nothing here yet.</p>
@@ -196,9 +193,9 @@ export default function ApprovalQueuePage() {
         </div>
       )}
 
-      {!loading && !err && displayedApplications.length > 0 && (
+      {!loading && !err && applications.length > 0 && (
         <div className="aq-list">
-          {displayedApplications.map(app => (
+          {applications.map(app => (
             <Link key={app._id} to={`/applications/${app._id}`} className="aq-row">
               <div className="aq-row-main">
                 <div className="aq-row-title">{app.job?.title}</div>
