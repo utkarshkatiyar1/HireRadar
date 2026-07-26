@@ -9,7 +9,12 @@
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-html { scroll-padding-top: 24px; }
+/* No layout on this page is meant to exceed the viewport width — any
+   overflow (calc() rounding on .filter-bar's edge-to-edge bleed, a long
+   unbroken company name, a badge that doesn't wrap) should clip rather than
+   push out a page-wide horizontal scrollbar. */
+html { scroll-padding-top: 24px; overflow-x: hidden; }
+body { overflow-x: hidden; }
 
 :root {
   /* ── Spacing scale (4px base) ─────────────────────────── */

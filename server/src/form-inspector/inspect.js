@@ -32,10 +32,20 @@ const detectExpiredJob = async (page) => {
 // CAPTCHA detection via common widget markers (reCAPTCHA/hCaptcha/Cloudflare
 // Turnstile iframes or script tags) — presence alone is enough to flag
 // automationCapability as PARTIAL/NONE; we never attempt to bypass it.
+// Exported so apply-adapters re-run this LIVE at submit time rather than
+// trusting the formInspection.captchaPresent snapshot taken at prepare time
+// — a real incident: a job inspected clean (captchaPresent: false) had an
+// hCaptcha widget present by the time the apply-worker reopened the page
+// minutes/hours later, and the adapter's blind submit-button click hung for
+// 30s on a hidden `#hcaptchaSubmitBtn` instead of detecting the CAPTCHA and
+// routing to ACTION_REQUIRED like it's supposed to. The extra id/class
+// selectors below also directly cover that pattern (submit buttons named
+// after the CAPTCHA provider even without a standard widget marker).
 const detectCaptcha = async (page) => {
   const selectors = [
     'iframe[src*="recaptcha"]', 'iframe[src*="hcaptcha"]', 'iframe[src*="turnstile"]',
     '.g-recaptcha', '#h-captcha', '[data-sitekey]',
+    '[id*="captcha" i]', '[class*="captcha" i]',
   ];
   for (const sel of selectors) {
     if (await page.locator(sel).count() > 0) return true;
@@ -125,3 +135,4 @@ async function inspect(applyUrl) {
 }
 
 module.exports = inspect;
+module.exports.detectCaptcha = detectCaptcha;

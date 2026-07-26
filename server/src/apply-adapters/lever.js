@@ -3,6 +3,7 @@ const {
   takeScreenshot, fillField, shouldSkipSubmission, detectConfirmation,
   saveSessionState, loadSessionStatePath, clearSessionState,
 } = require('./shared');
+const { detectCaptcha } = require('../form-inspector/inspect');
 
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122.0 Safari/537.36';
 
@@ -63,8 +64,10 @@ async function submitLever({ application, job, resumeVariant }) {
     const preSubmitUrl = page.url();
     const preSubmitScreenshotRef = await takeScreenshot(page, { applicationId: application._id, label: 'pre-submit' });
 
+    // Re-detected LIVE — see greenhouse.js's equivalent comment for why
+    // formInspection.captchaPresent can't be trusted here.
     const hasPasswordField = await page.locator('input[type="password"]').count() > 0;
-    const hasCaptcha = application.formInspection?.captchaPresent;
+    const hasCaptcha = await detectCaptcha(page);
     if (hasPasswordField || hasCaptcha) {
       await saveSessionState(ctx, application._id.toString());
       return {

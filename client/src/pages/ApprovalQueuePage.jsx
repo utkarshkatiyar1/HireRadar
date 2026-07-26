@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { useApplications } from '../hooks/useApplications';
 import { authFetch } from '../auth';
@@ -19,11 +19,24 @@ const SKIPPABLE_EXCLUDE = new Set([
 // they're not "approval" or "action-required" in the literal status-name
 // sense. Everything else in In Progress is a transient, fully-automatic
 // worker state you never have to look at.
+// sort: passed straight through to GET /applications?sort=... (see
+// routes/applications.js). Needs Action defaults to best_match — you want to
+// review your strongest recommendations first, not just the newest. Every
+// other bucket stays chronological (its default, 'recent'), since ordering
+// by score doesn't mean much for something you already submitted or that
+// the pipeline rejected.
+// resortByOwnTimestamp: the server's 'recent' sort orders by the JOB's
+// posting date (effectivePostedAt) — for Done/Issues that's the wrong axis
+// entirely, you want most-recently-SUBMITTED or most-recently-failed first,
+// not "whichever job was posted most recently". No backend sort mode exists
+// for "the application's own last status change", so these two buckets
+// re-sort client-side over the fetched page using the same rowTimestamp()
+// already computed for the per-row relative-time display below.
 const BUCKETS = {
-  needsAction: { label: 'Needs Action', statuses: ['READY_FOR_PREPARATION', 'READY_FOR_APPROVAL', 'ACTION_REQUIRED', 'DRY_RUN_COMPLETED'] },
+  needsAction: { label: 'Needs Action', statuses: ['READY_FOR_PREPARATION', 'READY_FOR_APPROVAL', 'ACTION_REQUIRED', 'DRY_RUN_COMPLETED'], sort: 'best_match' },
   inProgress:  { label: 'In Progress',  statuses: ['DISCOVERED', 'EVALUATING', 'INSPECTING_FORM', 'PREPARING', 'APPROVED', 'APPLYING'] },
-  done:        { label: 'Done',         statuses: ['SUBMITTED'] },
-  issues:      { label: 'Issues',       statuses: ['REJECTED', 'FAILED', 'SUBMISSION_UNCONFIRMED', 'SUBMISSION_BLOCKED'] },
+  done:        { label: 'Done',         statuses: ['SUBMITTED'], resortByOwnTimestamp: true },
+  issues:      { label: 'Issues',       statuses: ['REJECTED', 'FAILED', 'SUBMISSION_UNCONFIRMED', 'SUBMISSION_BLOCKED'], resortByOwnTimestamp: true },
 };
 
 const TIER_COLOR = {
@@ -41,12 +54,50 @@ const STATUS_LABEL = {
 
 const PAGE_SIZE = 50;
 
+const fmtRel = (d) => {
+  if (!d) return null;
+  const s = Math.max(0, Math.floor((Date.now() - new Date(d).getTime()) / 1000));
+  if (s < 60)    return 'just now';
+  if (s < 3600)  return `${Math.floor(s / 60)}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  if (s < 2_592_000) return `${Math.floor(s / 86400)}d ago`;
+  return new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+};
+
+// The most meaningful "when" for a row: SUBMITTED uses appliedAt specifically
+// (set exactly at confirmed submission — see applyProcessor.js), everything
+// else uses the most recent statusHistory entry (i.e. when it last actually
+// changed state), falling back to updatedAt if history is somehow empty.
+const rowTimestamp = (app) => {
+  if (app.status === 'SUBMITTED' && app.appliedAt) return app.appliedAt;
+  const lastHistory = app.statusHistory?.[app.statusHistory.length - 1];
+  return lastHistory?.at || app.updatedAt;
+};
+
+// One-click, no-input next-step action per status — lets a row be actioned
+// straight from the list instead of opening the detail page first.
+// ACTION_REQUIRED deliberately has no entry: resolving it needs real input
+// (free-text answer, or "I solved the CAPTCHA" confirmation via
+// ActionRequiredResolver) that can't be reduced to a single click.
+const ROW_ACTIONS = {
+  READY_FOR_PREPARATION: { label: 'Prepare', path: (id) => `/applications/${id}/prepare`, body: null },
+  READY_FOR_APPROVAL:    { label: 'Approve & Submit', path: (id) => `/applications/${id}/approve`, body: { submit: true } },
+  DRY_RUN_COMPLETED:     { label: 'Approve & Submit (Live)', path: (id) => `/applications/${id}/approve`, body: { submit: true } },
+};
+
 export default function ApprovalQueuePage() {
   const [bucket, setBucket] = useState('needsAction');
   const [page, setPage] = useState(1);
   const [skipping, setSkipping] = useState(() => new Set());
+  const [acting, setActing] = useState(() => new Set());
   const statusParam = BUCKETS[bucket].statuses.join(',');
-  const { applications, total, loading, err, refetch } = useApplications({ status: statusParam, page, limit: PAGE_SIZE });
+  const sort = BUCKETS[bucket].sort || 'recent';
+  const { applications, total, loading, err, refetch } = useApplications({ status: statusParam, sort, page, limit: PAGE_SIZE });
+
+  const displayedApplications = useMemo(() => {
+    if (!BUCKETS[bucket].resortByOwnTimestamp) return applications;
+    return [...applications].sort((a, b) => new Date(rowTimestamp(b)) - new Date(rowTimestamp(a)));
+  }, [applications, bucket]);
 
   const selectBucket = (key) => {
     setBucket(key);
@@ -63,6 +114,22 @@ export default function ApprovalQueuePage() {
       refetch();
     } finally {
       setSkipping(prev => { const next = new Set(prev); next.delete(id); return next; });
+    }
+  };
+
+  const handleRowAction = async (e, id, action) => {
+    e.preventDefault(); // row is a <Link> — don't navigate
+    e.stopPropagation();
+    if (acting.has(id)) return;
+    setActing(prev => new Set(prev).add(id));
+    try {
+      await authFetch(action.path(id), {
+        method: 'POST',
+        ...(action.body && { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(action.body) }),
+      });
+      refetch();
+    } finally {
+      setActing(prev => { const next = new Set(prev); next.delete(id); return next; });
     }
   };
 
@@ -117,7 +184,7 @@ export default function ApprovalQueuePage() {
         </div>
       )}
 
-      {!loading && !err && applications.length === 0 && (
+      {!loading && !err && displayedApplications.length === 0 && (
         <div className="empty">
           <div className="empty-icon">📋</div>
           <p className="empty-title">Nothing here yet.</p>
@@ -129,9 +196,9 @@ export default function ApprovalQueuePage() {
         </div>
       )}
 
-      {!loading && !err && applications.length > 0 && (
+      {!loading && !err && displayedApplications.length > 0 && (
         <div className="aq-list">
-          {applications.map(app => (
+          {displayedApplications.map(app => (
             <Link key={app._id} to={`/applications/${app._id}`} className="aq-row">
               <div className="aq-row-main">
                 <div className="aq-row-title">{app.job?.title}</div>
@@ -147,6 +214,38 @@ export default function ApprovalQueuePage() {
                   </span>
                 )}
                 <span className="aq-status">{STATUS_LABEL[app.status] || app.status}</span>
+                {fmtRel(rowTimestamp(app)) && (
+                  <span className="aq-timestamp" title={new Date(rowTimestamp(app)).toLocaleString()}>
+                    {fmtRel(rowTimestamp(app))}
+                  </span>
+                )}
+                {/* NONE-automation forms have nothing to auto-submit — the
+                    server blocks it too (applyProcessor.js), this just
+                    avoids a click that would bounce. */}
+                {app.status === 'READY_FOR_APPROVAL' && app.formInspection?.automationCapability === 'NONE' ? (
+                  <a
+                    className="btn-apply aq-row-action-btn"
+                    href={app.job?.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    Apply manually ↗
+                  </a>
+                ) : ROW_ACTIONS[app.status] && (
+                  <button
+                    className="btn-apply aq-row-action-btn"
+                    onClick={(e) => handleRowAction(e, app._id, ROW_ACTIONS[app.status])}
+                    disabled={acting.has(app._id)}
+                  >
+                    {acting.has(app._id) ? '…' : ROW_ACTIONS[app.status].label}
+                  </button>
+                )}
+                {app.status === 'ACTION_REQUIRED' && (
+                  <Link to={`/applications/${app._id}`} className="btn-apply aq-row-action-btn" onClick={(e) => e.stopPropagation()}>
+                    Resolve →
+                  </Link>
+                )}
                 {!SKIPPABLE_EXCLUDE.has(app.status) && (
                   <button
                     className="aq-skip-btn"

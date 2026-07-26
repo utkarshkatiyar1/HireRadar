@@ -11,6 +11,44 @@ const STATE_STEPS = [
   'READY_FOR_APPROVAL', 'APPROVED', 'APPLYING', 'SUBMITTED',
 ];
 
+// Plain-language explanation of what's actually happening at each status —
+// the raw enum name (e.g. "EVALUATING") doesn't tell a reader whether it's
+// something automatic they should just wait on, or something waiting on them.
+const STATUS_EXPLANATION = {
+  DISCOVERED: 'Just found by the scraper — waiting to be scored against your profile.',
+  EVALUATING: 'Running eligibility and fit-scoring right now. This is automatic — no action needed.',
+  READY_FOR_PREPARATION: 'Passed eligibility and fit-scoring. This is a recommendation — prepare it to draft real answers, or skip it.',
+  INSPECTING_FORM: 'Opening the application form to detect its fields and platform. Automatic — no action needed.',
+  PREPARING: 'Drafting answers from your Candidate Profile and verifying each one. Automatic — no action needed.',
+  READY_FOR_APPROVAL: 'Answers are drafted and verified. Review them below, then approve as a draft or approve & submit.',
+  APPROVED: 'Approved — about to be handed to the submission worker.',
+  APPLYING: 'Submitting the application right now. Automatic — no action needed.',
+  ACTION_REQUIRED: 'Submission paused — it needs your input to continue (see below).',
+  DRY_RUN_COMPLETED: 'Dry run finished — the form was filled but not actually submitted. Review it, then re-approve to submit for real.',
+  SUBMITTED: 'Submitted and confirmed. Nothing more to do here.',
+  SUBMISSION_UNCONFIRMED: 'The submit button was clicked, but confirmation couldn\'t be verified. Check the audit trail and confirm manually with the employer if needed.',
+  SUBMISSION_BLOCKED: 'Submission was blocked — either no adapter exists for this platform, or live submission isn\'t enabled for it yet.',
+  REJECTED: 'Rejected automatically by eligibility or fit-scoring — see the reasons below.',
+  SKIPPED: 'You passed on this one.',
+  CANCELLED: 'Cancelled.',
+  EXPIRED: 'This posting is no longer open — it was likely taken down after being scraped.',
+  FAILED: 'Something went wrong in the pipeline. An admin retry is needed to move it forward again.',
+};
+
+const fmtDate = (d) => {
+  if (!d) return null;
+  try {
+    return new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' });
+  } catch { return null; }
+};
+
+const fmtDateTime = (d) => {
+  if (!d) return null;
+  try { return new Date(d).toLocaleString(); } catch { return null; }
+};
+
+const DESCRIPTION_COLLAPSE_LENGTH = 600;
+
 export default function ApplicationDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -18,6 +56,7 @@ export default function ApplicationDetail() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [descExpanded, setDescExpanded] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -95,22 +134,90 @@ export default function ApplicationDetail() {
           <div>
             <h1 className="aq-detail-title">{app.job?.title}</h1>
             <div className="aq-row-sub">{app.job?.company} · {app.job?.location}</div>
+            <div className="jc-meta" style={{ marginTop: 10 }}>
+              {app.job?.exp && (
+                <span className="jc-meta-tag">
+                  <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+                    <rect x="1.5" y="3.5" width="9" height="7" rx="1"/>
+                    <path d="M4 3.5V2.5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v1"/>
+                    <path d="M1.5 6.5h9" strokeWidth="1"/>
+                  </svg>
+                  {app.job.exp}
+                </span>
+              )}
+              {fmtDate(app.job?.postedAt || app.job?.date) && (
+                <span className="jc-meta-tag">
+                  <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+                    <rect x="1.5" y="2" width="9" height="9" rx="1"/>
+                    <path d="M8 1v2M4 1v2M1.5 5h9" strokeWidth="1"/>
+                  </svg>
+                  Posted {fmtDate(app.job?.postedAt || app.job?.date)}
+                </span>
+              )}
+              {app.job?.url && (
+                <a href={app.job.url} target="_blank" rel="noopener noreferrer" className="jc-meta-tag" style={{ color: 'var(--violet)' }}>
+                  View posting ↗
+                </a>
+              )}
+            </div>
           </div>
           {app.fitScore?.total != null && <span className="aq-score aq-score-lg">{app.fitScore.total}%</span>}
         </div>
 
-        {/* State timeline */}
+        {/* State timeline — each reached step shows when it happened, sourced
+            from statusHistory (first match, since a status can in principle
+            be re-entered, e.g. REJECTED -> EVALUATING via admin retry). */}
         {stepIndex >= 0 && (
           <div className="aq-timeline">
-            {STATE_STEPS.map((s, i) => (
-              <div key={s} className={`aq-timeline-step${i <= stepIndex ? ' done' : ''}${i === stepIndex ? ' current' : ''}`}>
-                <span className="aq-timeline-dot" />
-                <span className="aq-timeline-label">{s.replace(/_/g, ' ')}</span>
-              </div>
-            ))}
+            {STATE_STEPS.map((s, i) => {
+              const reachedAt = app.statusHistory?.find(h => h.status === s)?.at;
+              return (
+                <div
+                  key={s}
+                  className={`aq-timeline-step${i <= stepIndex ? ' done' : ''}${i === stepIndex ? ' current' : ''}`}
+                  title={reachedAt ? fmtDateTime(reachedAt) : undefined}
+                >
+                  <span className="aq-timeline-dot" />
+                  <span className="aq-timeline-label">{s.replace(/_/g, ' ')}</span>
+                </div>
+              );
+            })}
           </div>
         )}
         {stepIndex < 0 && <div className="aq-status-badge">{app.status.replace(/_/g, ' ')}</div>}
+        {(() => {
+          const lastHistory = app.statusHistory?.[app.statusHistory.length - 1];
+          return lastHistory?.at ? (
+            <p className="aq-row-sub" style={{ fontSize: '0.75rem', marginTop: -6 }}>
+              Last updated {fmtDateTime(lastHistory.at)}
+            </p>
+          ) : null;
+        })()}
+
+        {STATUS_EXPLANATION[app.status] && (
+          <p className="aq-row-sub" style={{ marginTop: -8 }}>{STATUS_EXPLANATION[app.status]}</p>
+        )}
+
+        {/* Job description — collapsed by default since raw scraped JD text
+            can run to several thousand characters. */}
+        {app.job?.description && (
+          <div className="aq-section">
+            <div className="aq-section-title">Job description</div>
+            <p className="aq-row-sub" style={{ whiteSpace: 'pre-wrap' }}>
+              {descExpanded || app.job.description.length <= DESCRIPTION_COLLAPSE_LENGTH
+                ? app.job.description
+                : `${app.job.description.slice(0, DESCRIPTION_COLLAPSE_LENGTH)}…`}
+            </p>
+            {app.job.description.length > DESCRIPTION_COLLAPSE_LENGTH && (
+              <button
+                onClick={() => setDescExpanded(v => !v)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, alignSelf: 'flex-start', color: 'var(--violet)', fontSize: '0.82rem', fontWeight: 600 }}
+              >
+                {descExpanded ? 'Show less' : 'Show more'}
+              </button>
+            )}
+          </div>
+        )}
 
         {/* Eligibility / fit rationale */}
         {app.eligibility?.reasons?.length > 0 && (
@@ -170,10 +277,19 @@ export default function ApplicationDetail() {
             <button className="btn-apply" onClick={prepare} disabled={busy}>Prepare Application</button>
           )}
           {app.status === 'READY_FOR_APPROVAL' && (
-            <>
-              <button className="btn-apply" onClick={() => approve(true)} disabled={busy}>Approve &amp; Submit</button>
-              <button className="btn-mark" onClick={() => approve(false)} disabled={busy}>Approve Draft</button>
-            </>
+            app.formInspection?.automationCapability === 'NONE' ? (
+              // No fillable fields were found on this form — nothing to
+              // auto-submit. The server blocks this too (applyProcessor.js),
+              // but telling you upfront saves a click that would just bounce.
+              <a className="btn-apply" href={app.job?.url} target="_blank" rel="noopener noreferrer">
+                Apply manually on job posting ↗
+              </a>
+            ) : (
+              <>
+                <button className="btn-apply" onClick={() => approve(true)} disabled={busy}>Approve &amp; Submit</button>
+                <button className="btn-mark" onClick={() => approve(false)} disabled={busy}>Approve Draft</button>
+              </>
+            )
           )}
           {app.status === 'DRY_RUN_COMPLETED' && (
             <button className="btn-apply" onClick={() => approve(true)} disabled={busy}>Approve &amp; Submit (Live)</button>

@@ -3,6 +3,7 @@ const {
   takeScreenshot, fillField, shouldSkipSubmission, detectConfirmation,
   saveSessionState, loadSessionStatePath, clearSessionState,
 } = require('./shared');
+const { detectCaptcha } = require('../form-inspector/inspect');
 
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122.0 Safari/537.36';
 
@@ -60,9 +61,14 @@ async function submitGreenhouse({ application, job, resumeVariant }) {
     const preSubmitScreenshotRef = await takeScreenshot(page, { applicationId: application._id, label: 'pre-submit' });
 
     // OTP/CAPTCHA check — if either is present at this point, pause rather
-    // than attempt to submit past it.
+    // than attempt to submit past it. Re-detected LIVE, never trusted from
+    // formInspection.captchaPresent: that snapshot can be stale by the time
+    // this adapter reopens the page (minutes/hours later, a different
+    // session) — a real incident had a job inspect clean and then present a
+    // hidden hCaptcha submit button at actual submit time, which a blind
+    // submitButton.click() hung on for 30s instead of ever detecting.
     const hasPasswordField = await page.locator('input[type="password"]').count() > 0;
-    const hasCaptcha = application.formInspection?.captchaPresent;
+    const hasCaptcha = await detectCaptcha(page);
     if (hasPasswordField || hasCaptcha) {
       await saveSessionState(ctx, application._id.toString());
       return {

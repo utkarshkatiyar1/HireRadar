@@ -3732,6 +3732,16 @@ tbody tr.row-applied:hover td      { background: var(--teal-dim); opacity: 0.8; 
 }
 
 .aq-status { color: var(--text-3); font-size: 0.78rem; }
+.aq-timestamp { color: var(--text-4); font-size: 0.72rem; white-space: nowrap; }
+
+.aq-row-action-btn {
+  flex-shrink: 0;
+  padding: 4px 11px !important;
+  font-size: 0.7rem !important;
+  border: none;
+  cursor: pointer;
+}
+.aq-row-action-btn:disabled { opacity: 0.6; cursor: not-allowed; }
 
 .aq-skip-btn {
   background: transparent; border: none; color: var(--text-4);

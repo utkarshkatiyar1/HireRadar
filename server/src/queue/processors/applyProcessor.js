@@ -30,6 +30,19 @@ module.exports = async function applyProcessor(job) {
     return { applicationId, status: application.status, note: 'not in APPLYING state, skipped' };
   }
 
+  // A NONE-automationCapability form has zero extracted fields and was never
+  // meant to reach real submission — inspectionProcessor.js routes it
+  // straight to READY_FOR_APPROVAL/MANUAL specifically so a human applies by
+  // hand. Nothing previously stopped an "Approve & Submit" click from
+  // reaching this far anyway: a real incident had exactly this launch a
+  // browser, find no fillable fields, and hang 30s on a submit button it
+  // should never have attempted to click.
+  if (application.formInspection?.automationCapability === 'NONE') {
+    transition(application, 'SUBMISSION_BLOCKED', 'form has no automatable fields (automationCapability: NONE) — apply manually on the job posting');
+    await application.save();
+    return { applicationId, status: application.status };
+  }
+
   const loadAdapter = ADAPTERS[application.applicationPlatform];
   if (!loadAdapter) {
     transition(application, 'SUBMISSION_BLOCKED', `no apply-adapter available for platform "${application.applicationPlatform}"`);
