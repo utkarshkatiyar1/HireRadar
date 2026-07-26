@@ -35,7 +35,12 @@ async function submitGreenhouse({ application, job, resumeVariant }) {
 
   try {
     const startUrl = application.sessionState?.currentUrl || job.url;
-    await page.goto(startUrl, { waitUntil: 'networkidle', timeout: 30000 });
+    // domcontentloaded, not networkidle — many real job-board pages never
+    // reach true network idle (persistent analytics/polling), which turned
+    // a fully-loaded, usable page into a hard 30s timeout failure. This
+    // exact failure mode is what motivated this change.
+    await page.goto(startUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await page.waitForTimeout(1000);
 
     const answersByKey = new Map(application.answers.map(a => [a.fieldKey, a]));
     const fillResults = [];

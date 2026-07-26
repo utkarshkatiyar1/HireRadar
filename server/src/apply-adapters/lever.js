@@ -31,7 +31,11 @@ async function submitLever({ application, job, resumeVariant }) {
 
   try {
     const startUrl = application.sessionState?.currentUrl || job.url;
-    await page.goto(startUrl, { waitUntil: 'networkidle', timeout: 30000 });
+    // domcontentloaded, not networkidle — many real job-board pages never
+    // reach true network idle (persistent analytics/polling), which turned
+    // a fully-loaded, usable page into a hard 30s timeout failure.
+    await page.goto(startUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await page.waitForTimeout(1000);
 
     // Lever postings often need an explicit "Apply for this job" click to
     // reveal the form.

@@ -98,7 +98,13 @@ async function inspect(applyUrl) {
   const page = await ctx.newPage();
 
   try {
-    await page.goto(applyUrl, { waitUntil: 'networkidle', timeout: 30000 });
+    // domcontentloaded, not networkidle — many real job-board pages never
+    // reach true network idle (persistent analytics/polling), which turned
+    // a fully-loaded, usable page into a hard 30s timeout failure. A short
+    // settle wait covers the SPA-hydration gap that networkidle used to
+    // paper over.
+    await page.goto(applyUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await page.waitForTimeout(1500);
 
     const html = await page.content();
     const platform = detectPlatform(page.url(), html);

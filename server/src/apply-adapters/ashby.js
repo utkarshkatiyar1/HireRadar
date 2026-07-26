@@ -31,7 +31,10 @@ async function submitAshby({ application, job, resumeVariant }) {
 
   try {
     const startUrl = application.sessionState?.currentUrl || job.url;
-    await page.goto(startUrl, { waitUntil: 'networkidle', timeout: 30000 });
+    // domcontentloaded, not networkidle — many real job-board pages never
+    // reach true network idle (persistent analytics/polling), which turned
+    // a fully-loaded, usable page into a hard 30s timeout failure.
+    await page.goto(startUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
 
     // SPA hydration — give the form time to render before locating fields.
     await page.waitForTimeout(1500);
