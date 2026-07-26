@@ -63,8 +63,15 @@ async function discoverApplicationsForUser(userId, { sinceJobIds } = {}) {
     { ordered: false }
   );
 
+  // addBulk pipelines all N job-adds into far fewer Redis round-trips than
+  // Promise.all(docs.map(queue.add)) — same number of logical BullMQ jobs
+  // created, much less command overhead, which matters when a scrape cycle
+  // or backfill discovers hundreds/thousands of jobs for a single user.
   const queue = getPipelineQueue();
-  await Promise.all(docs.map(doc => queue.add('evaluate', { applicationId: doc._id.toString() })));
+  await queue.addBulk(docs.map(doc => ({
+    name: 'evaluate',
+    data: { applicationId: doc._id.toString() },
+  })));
 
   return docs.length;
 }

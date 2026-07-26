@@ -23,13 +23,19 @@ async function start() {
   // where one shared .env sets PORT=5000 for the API.
   startHealthServer('apply-worker', process.env.APPLY_WORKER_PORT || process.env.PORT || 10002);
 
+  // stalledInterval widened from BullMQ's 30s default — that's a continuous
+  // background poll per Worker regardless of actual load, pure Redis command
+  // overhead at low volume. 120s means a genuinely crashed job takes up to
+  // ~2 min longer to be detected/retried, an acceptable trade at this scale.
   const applyWorker = new Worker('apply', applyProcessor, {
     connection: getConnection(),
     concurrency: APPLY_CONCURRENCY,
+    stalledInterval: 120_000,
   });
   const inspectionWorker = new Worker('inspection', inspectionProcessor, {
     connection: getConnection(),
     concurrency: INSPECTION_CONCURRENCY,
+    stalledInterval: 120_000,
   });
 
   for (const [name, worker] of [['apply', applyWorker], ['inspection', inspectionWorker]]) {

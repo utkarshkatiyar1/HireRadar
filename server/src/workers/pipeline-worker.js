@@ -22,9 +22,12 @@ async function start() {
   // own port instead of colliding with the API or the other worker.
   startHealthServer('pipeline-worker', process.env.PIPELINE_WORKER_PORT || process.env.PORT || 10001);
 
+  // stalledInterval widened from BullMQ's 30s default — see apply-worker.js's
+  // equivalent comment for why.
   const worker = new Worker('pipeline', pipelineProcessor, {
     connection: getConnection(),
     concurrency: CONCURRENCY,
+    stalledInterval: 120_000,
   });
 
   worker.on('completed', (job, result) => {

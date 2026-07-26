@@ -181,7 +181,10 @@ export default function ApplicationDetail() {
           {app.status === 'SUBMITTED' && (
             <Link className="btn-mark" to={`/audit/${app._id}`}>View Audit Trail</Link>
           )}
-          {!['SUBMITTED', 'SKIPPED', 'REJECTED', 'CANCELLED'].includes(app.status) && (
+          {/* Every status here has an ALLOWED_TRANSITIONS entry (server/src/
+              utils/applicationState.js) that does NOT include SKIPPED —
+              showing Skip for any of these would 409 on click. */}
+          {!['SUBMITTED', 'SKIPPED', 'REJECTED', 'CANCELLED', 'DRY_RUN_COMPLETED', 'EXPIRED', 'SUBMISSION_UNCONFIRMED', 'SUBMISSION_BLOCKED', 'FAILED'].includes(app.status) && (
             <button className="jc-dismiss" onClick={skip} disabled={busy} title="Pass on this role">Skip</button>
           )}
         </div>

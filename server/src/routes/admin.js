@@ -106,8 +106,15 @@ router.post('/applications/requeue-stuck', requireAdmin, async (req, res) => {
   try {
     const limit = Math.min(Number(req.body?.limit) || 10000, 10000);
     const stuck = await Application.find({ status: 'DISCOVERED' }, { _id: 1 }).limit(limit).lean();
+    // addBulk pipelines all N adds into far fewer Redis round-trips than
+    // Promise.all(...map(queue.add)) — this exact loop, run against 8000+
+    // stuck applications, was the direct trigger for a prior Redis-quota
+    // incident (many independent command sequences fired at once).
     const queue = getPipelineQueue();
-    await Promise.all(stuck.map(a => queue.add('evaluate', { applicationId: a._id.toString() })));
+    await queue.addBulk(stuck.map(a => ({
+      name: 'evaluate',
+      data: { applicationId: a._id.toString() },
+    })));
     res.json({ requeued: stuck.length });
   } catch (e) {
     res.status(500).json({ error: e.message });

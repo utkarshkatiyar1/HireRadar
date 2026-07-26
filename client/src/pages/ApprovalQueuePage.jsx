@@ -3,14 +3,26 @@ import { Link } from 'react-router-dom';
 import { useApplications } from '../hooks/useApplications';
 import { authFetch } from '../auth';
 
-// Matches ApplicationDetail.jsx's own guard for when Skip is offered — once
-// an application reaches one of these, skipping no longer makes sense.
-const SKIPPABLE_EXCLUDE = new Set(['SUBMITTED', 'SKIPPED', 'REJECTED', 'CANCELLED']);
+// Every status whose ALLOWED_TRANSITIONS entry (server/src/utils/
+// applicationState.js) does NOT include SKIPPED — showing a Skip button for
+// any of these would 409 on click. Keep this in sync with that file; it's
+// the actual source of truth. Matches ApplicationDetail.jsx's own guard.
+const SKIPPABLE_EXCLUDE = new Set([
+  'SUBMITTED', 'SKIPPED', 'REJECTED', 'CANCELLED',
+  'DRY_RUN_COMPLETED', 'EXPIRED', 'SUBMISSION_UNCONFIRMED', 'SUBMISSION_BLOCKED', 'FAILED',
+]);
 
+// Bucketed by "does this need a decision from you right now", not by pipeline
+// stage — READY_FOR_PREPARATION (a recommendation waiting on prepare/skip)
+// and DRY_RUN_COMPLETED (a dry-run waiting on re-approval to actually submit)
+// both require your input, so they belong in Needs Action even though
+// they're not "approval" or "action-required" in the literal status-name
+// sense. Everything else in In Progress is a transient, fully-automatic
+// worker state you never have to look at.
 const BUCKETS = {
-  needsAction: { label: 'Needs Action', statuses: ['READY_FOR_APPROVAL', 'ACTION_REQUIRED'] },
-  inProgress:  { label: 'In Progress',  statuses: ['DISCOVERED', 'EVALUATING', 'READY_FOR_PREPARATION', 'INSPECTING_FORM', 'PREPARING', 'APPROVED', 'APPLYING'] },
-  done:        { label: 'Done',         statuses: ['SUBMITTED', 'DRY_RUN_COMPLETED'] },
+  needsAction: { label: 'Needs Action', statuses: ['READY_FOR_PREPARATION', 'READY_FOR_APPROVAL', 'ACTION_REQUIRED', 'DRY_RUN_COMPLETED'] },
+  inProgress:  { label: 'In Progress',  statuses: ['DISCOVERED', 'EVALUATING', 'INSPECTING_FORM', 'PREPARING', 'APPROVED', 'APPLYING'] },
+  done:        { label: 'Done',         statuses: ['SUBMITTED'] },
   issues:      { label: 'Issues',       statuses: ['REJECTED', 'FAILED', 'SUBMISSION_UNCONFIRMED', 'SUBMISSION_BLOCKED'] },
 };
 
@@ -111,7 +123,7 @@ export default function ApprovalQueuePage() {
           <p className="empty-title">Nothing here yet.</p>
           <p className="empty-hint">
             {bucket === 'needsAction'
-              ? 'Applications land here once eligibility and fit-scoring recommend them and you\'ve explicitly prepared them.'
+              ? 'Applications land here once they\'re recommended (ready to prepare), drafted (ready for approval), waiting on you to resolve a CAPTCHA/login, or waiting on your re-approval after a dry run.'
               : 'No applications currently in this state.'}
           </p>
         </div>
