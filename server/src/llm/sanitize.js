@@ -19,17 +19,47 @@ function stripNeverSend(obj) {
   return out;
 }
 
+// Synthesizes fact-shaped entries from CandidateProfile's own typed fields
+// (fullName, phone, links.*) — these were duplicated by hand into facts[]
+// early on (identity.fullName, identity.phone, etc.), which meant keeping
+// two copies of the same value in sync forever. The typed fields are
+// themselves user-entered and therefore just as trustworthy as an approved
+// fact; this derives the same stable ids from them directly so answerAgent's
+// deterministic fast-path and verifier's grounding check both work against
+// ONE source of truth. A real facts[] entry with the same id always wins
+// (someone may deliberately want a different value answered for a specific
+// field), so this only fills in what facts[] doesn't already have.
+function deriveIdentityFacts(profile) {
+  const derived = [];
+  if (profile?.fullName) derived.push({ id: 'identity.fullName', label: 'Full name', value: profile.fullName, approved: true });
+  if (profile?.phone)    derived.push({ id: 'identity.phone',    label: 'Phone',     value: profile.phone,    approved: true });
+  if (profile?.links?.linkedin)  derived.push({ id: 'identity.linkedin',  label: 'LinkedIn',  value: profile.links.linkedin,  approved: true });
+  if (profile?.links?.github)    derived.push({ id: 'identity.github',    label: 'GitHub',    value: profile.links.github,    approved: true });
+  if (profile?.links?.portfolio) derived.push({ id: 'identity.portfolio', label: 'Portfolio', value: profile.links.portfolio, approved: true });
+  return derived;
+}
+
+// Merges real facts[] with the synthesized identity facts above — a real
+// facts[] entry for a given id always takes precedence over the derived one.
+function factsWithDerivedIdentity(profile) {
+  const real = profile?.facts || [];
+  const realIds = new Set(real.map(f => f.id));
+  const derived = deriveIdentityFacts(profile).filter(f => !realIds.has(f.id));
+  return [...real, ...derived];
+}
+
 // Given a CandidateProfile doc, returns ONLY the facts relevant to a specific
 // question — never the full profile. `relevantKeywords` is a small set of
 // terms pulled from the field label/key (e.g. "react", "salary", "notice
 // period") used for a simple relevance filter; callers can also pass explicit
 // factIds to force-include specific facts regardless of keyword match.
 function selectRelevantFacts(profile, { relevantKeywords = [], forceIncludeIds = [] } = {}) {
-  if (!profile?.facts?.length) return [];
+  const allFacts = factsWithDerivedIdentity(profile);
+  if (!allFacts.length) return [];
   const keywords = relevantKeywords.map(k => k.toLowerCase());
   const forceSet = new Set(forceIncludeIds);
 
-  return profile.facts
+  return allFacts
     .filter(f => f.approved !== false)
     .filter(f => {
       if (forceSet.has(f.id)) return true;
@@ -57,4 +87,4 @@ function sanitizeJobDescription(description) {
   return String(description).replace(/data:[^,]+,[A-Za-z0-9+/=]{100,}/g, '[binary omitted]').slice(0, 6000);
 }
 
-module.exports = { stripNeverSend, selectRelevantFacts, selectSkillsSummary, sanitizeJobDescription };
+module.exports = { stripNeverSend, selectRelevantFacts, selectSkillsSummary, sanitizeJobDescription, deriveIdentityFacts, factsWithDerivedIdentity };

@@ -2,6 +2,7 @@ const { callStructured } = require('../llm/callStructured');
 const { resolveModel } = require('../llm/modelRouter');
 const verifierPrompt = require('../llm/prompts/verifier.prompt');
 const { LlmError, LlmQuotaError } = require('../llm/errors');
+const { factsWithDerivedIdentity } = require('../llm/sanitize');
 
 const PROHIBITED_TERMS = ['expert', 'extensive experience', 'world-class', 'guru', 'ninja ' /* trailing space avoids "engineering" false-positive */];
 
@@ -17,7 +18,11 @@ function runDeterministicVerification(answer, profile) {
     return { decided: true, flag: 'unsupported', note: 'answer has a value but no factIds — cannot ground it' };
   }
 
-  const factsById = new Map((profile?.facts || []).map(f => [f.id, f]));
+  // Includes facts derived from profile.fullName/phone/links.* — see
+  // sanitize.js's deriveIdentityFacts — so answerAgent's deterministic
+  // fast-path answers (name/email/phone/links) resolve here too, instead of
+  // failing as "references unknown fact id".
+  const factsById = new Map(factsWithDerivedIdentity(profile).map(f => [f.id, f]));
   const unresolvedIds = answer.factIds.filter(id => !factsById.has(id));
   if (unresolvedIds.length) {
     return { decided: true, flag: 'unsupported', note: `references unknown fact id(s): ${unresolvedIds.join(', ')}` };
@@ -69,7 +74,7 @@ module.exports = async function verifier(answers, profile) {
     }
 
     try {
-      const factsById = new Map((profile?.facts || []).map(f => [f.id, f]));
+      const factsById = new Map(factsWithDerivedIdentity(profile).map(f => [f.id, f]));
       const resolvedFacts = answer.factIds.map(id => ({ id, value: factsById.get(id)?.value }));
       const llmResult = await callStructured({
         stage: 'verifier',
