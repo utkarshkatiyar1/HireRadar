@@ -38,7 +38,7 @@ const BUCKETS = {
   needsAction: { label: 'Needs Action', statuses: ['READY_FOR_PREPARATION', 'READY_FOR_APPROVAL', 'ACTION_REQUIRED', 'DRY_RUN_COMPLETED'], sort: 'best_match' },
   inProgress:  { label: 'In Progress',  statuses: ['DISCOVERED', 'EVALUATING', 'INSPECTING_FORM', 'PREPARING', 'APPROVED', 'APPLYING'], sort: 'updated_recent' },
   done:        { label: 'Done',         statuses: ['SUBMITTED'], sort: 'updated_recent' },
-  issues:      { label: 'Issues',       statuses: ['REJECTED', 'FAILED', 'SUBMISSION_UNCONFIRMED', 'SUBMISSION_BLOCKED'], sort: 'updated_recent' },
+  issues:      { label: 'Issues',       statuses: ['REJECTED', 'FAILED', 'SUBMISSION_UNCONFIRMED', 'SUBMISSION_BLOCKED', 'EXPIRED'], sort: 'updated_recent' },
 };
 
 const TIER_COLOR = {

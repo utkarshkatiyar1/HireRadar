@@ -15,9 +15,11 @@ const SCREENSHOT_DIR = path.join(__dirname, '..', '..', 'uploads', 'screenshots'
 
 const oid = (s) => new mongoose.Types.ObjectId(s);
 
-const NEEDS_ACTION = ['READY_FOR_APPROVAL', 'ACTION_REQUIRED'];
-const IN_PROGRESS  = ['DISCOVERED', 'EVALUATING', 'READY_FOR_PREPARATION', 'INSPECTING_FORM', 'PREPARING', 'APPROVED', 'APPLYING'];
-const ISSUES       = ['REJECTED', 'FAILED', 'SUBMISSION_UNCONFIRMED', 'SUBMISSION_BLOCKED'];
+// Must mirror client/src/pages/ApprovalQueuePage.jsx's BUCKETS exactly —
+// this is what the sidebar/header "Needs Action" badge counts (see
+// /applications/counts below), and drifted from the actual tab contents
+// once READY_FOR_PREPARATION/DRY_RUN_COMPLETED moved into Needs Action.
+const NEEDS_ACTION = ['READY_FOR_PREPARATION', 'READY_FOR_APPROVAL', 'ACTION_REQUIRED', 'DRY_RUN_COMPLETED'];
 
 // GET /applications — read-only, no side effects. Supports status/company/
 // minScore filters, pagination, and explicit sort modes.
@@ -29,6 +31,37 @@ router.get('/', requireAuth, async (req, res) => {
     const filter = { userId };
     if (status) filter.status = { $in: status.split(',') };
     if (minScore) filter['fitScore.total'] = { $gte: Number(minScore) };
+
+    const pageNum = Math.max(1, Number(page));
+    const limitNum = Math.max(1, Number(limit));
+
+    // 'updated_recent' and no company filter: sort/paginate at the DB level
+    // using the indexed lastStatusChangeAt field, instead of loading every
+    // matching Application into Node first. This is the path Issues/Done use
+    // (routes: ApprovalQueuePage.jsx) — with REJECTED alone in the
+    // thousands, the old load-everything-then-sort-in-memory approach was
+    // the actual cause of those tabs feeling slow. Other sort modes
+    // (recent/best_match/recent_high_match/easy_apply) depend on the JOB's
+    // postedAt or fitScore/formInspection, which live outside a single
+    // indexable Application field, so they still need the in-memory path
+    // below until job data is denormalized too.
+    if (sort === 'updated_recent' && !company) {
+      const [total, apps] = await Promise.all([
+        Application.countDocuments(filter),
+        Application.find(filter)
+          .sort({ lastStatusChangeAt: -1 })
+          .skip((pageNum - 1) * limitNum)
+          .limit(limitNum)
+          .lean(),
+      ]);
+      const jobs = await Job.find({ _id: { $in: apps.map(a => a.jobId) } }).lean();
+      const jobById = new Map(jobs.map(j => [String(j._id), j]));
+      const applications = apps
+        .filter(a => jobById.has(String(a.jobId)))
+        .map(a => ({ ...a, job: jobById.get(String(a.jobId)) }));
+
+      return res.json({ total, page: pageNum, limit: limitNum, applications });
+    }
 
     const apps = await Application.find(filter).lean();
     const jobIds = apps.map(a => a.jobId);
@@ -43,26 +76,15 @@ router.get('/', requireAuth, async (req, res) => {
       new Date(effectivePostedAt(b.job)) - new Date(effectivePostedAt(a.job))
       || (b.job.postedAtConfidence ?? 0) - (a.job.postedAtConfidence ?? 0);
     const byScore = (a, b) => (b.fitScore?.total ?? 0) - (a.fitScore?.total ?? 0);
-    // The APPLICATION's own last change (statusHistory), not the underlying
-    // job's posting date — 'recent' answers "what job was posted most
-    // recently", which is the wrong axis for buckets like Issues/Done where
-    // you want "what did the pipeline touch most recently". Client-side
-    // re-sorting the already-paginated 'recent' page can't fix this: the
-    // truly-latest-changed application might not even be on that page.
-    const lastChangedAt = (a) => {
-      const lastHistory = a.statusHistory?.[a.statusHistory.length - 1];
-      return new Date(lastHistory?.at || a.updatedAt || 0);
-    };
+    const lastChangedAt = (a) => new Date(a.lastStatusChangeAt || a.updatedAt || 0);
     const byUpdatedRecency = (a, b) => lastChangedAt(b) - lastChangedAt(a);
 
     if (sort === 'best_match') merged.sort((a, b) => byScore(a, b) || byRecency(a, b));
     else if (sort === 'recent_high_match') merged.sort((a, b) => byRecency(a, b) || byScore(a, b));
     else if (sort === 'easy_apply') merged.sort((a, b) => (a.formInspection?.fields?.length ?? 99) - (b.formInspection?.fields?.length ?? 99) || byRecency(a, b));
-    else if (sort === 'updated_recent') merged.sort(byUpdatedRecency);
+    else if (sort === 'updated_recent') merged.sort(byUpdatedRecency); // reached only when `company` filter is set
     else merged.sort(byRecency); // 'recent' (default)
 
-    const pageNum = Math.max(1, Number(page));
-    const limitNum = Math.max(1, Number(limit));
     const start = (pageNum - 1) * limitNum;
     const paged = merged.slice(start, start + limitNum);
 

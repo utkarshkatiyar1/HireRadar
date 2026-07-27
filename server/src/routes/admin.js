@@ -121,6 +121,33 @@ router.post('/applications/requeue-stuck', requireAdmin, async (req, res) => {
   }
 });
 
+// POST /admin/applications/backfill-last-status-change — one-time migration:
+// sets lastStatusChangeAt (added to support DB-level sort/pagination on
+// Issues/Done — see models/application.js and routes/applications.js) on
+// every existing Application from its own statusHistory, since the schema
+// default only applies to documents created AFTER this field existed.
+// Idempotent — safe to re-run; only touches docs where the field is unset.
+router.post('/applications/backfill-last-status-change', requireAdmin, async (req, res) => {
+  try {
+    const limit = Math.min(Number(req.body?.limit) || 10000, 10000);
+    const targets = await Application.find(
+      { lastStatusChangeAt: { $exists: false } },
+      { statusHistory: 1, updatedAt: 1 }
+    ).limit(limit).lean();
+
+    const bulkOps = targets.map(a => {
+      const lastHistory = a.statusHistory?.[a.statusHistory.length - 1];
+      const at = lastHistory?.at || a.updatedAt || new Date();
+      return { updateOne: { filter: { _id: a._id }, update: { $set: { lastStatusChangeAt: at } } } };
+    });
+
+    if (bulkOps.length) await Application.bulkWrite(bulkOps, { ordered: false });
+    res.json({ updated: bulkOps.length, remaining: targets.length === limit });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ─── Source management ────────────────────────────────────────────────────────
 
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36';

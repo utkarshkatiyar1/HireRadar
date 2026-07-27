@@ -47,8 +47,15 @@ const transition = (application, to, note) => {
   if (!canTransition(from, to)) {
     throw new InvalidTransitionError(from, to);
   }
+  const now = new Date();
   application.status = to;
-  application.statusHistory.push({ status: to, at: new Date(), note });
+  application.statusHistory.push({ status: to, at: now, note });
+  // Denormalized + indexed (see models/application.js) so GET /applications
+  // can sort/paginate "most recently changed" directly in MongoDB instead of
+  // loading every matching document into Node to sort statusHistory there —
+  // that in-memory approach was the actual cause of Issues/Done feeling slow
+  // once REJECTED alone passed several thousand documents.
+  application.lastStatusChangeAt = now;
   return application;
 };
 

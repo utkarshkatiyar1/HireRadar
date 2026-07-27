@@ -3434,7 +3434,13 @@ tbody tr.row-applied:hover td      { background: var(--teal-dim); opacity: 0.8; 
 /* ── Sidebar shell (Stage 0 — functional layout, visual pass comes later) ── */
 .sb-shell {
   display: flex;
-  min-height: 100vh;
+  /* height, not min-height — the shell must be a bounded viewport-height
+     row so .sb-content below can be the ONE scrolling region. With
+     min-height, tall page content grew .sb-shell itself past 100vh, making
+     the document/body the real scroll container — which dragged the
+     sidebar (a flex sibling) along with it despite position: sticky, since
+     sticky only pins within its own scroll container, not the page. */
+  height: 100vh;
 }
 
 .sb-sidebar {
@@ -3550,6 +3556,11 @@ tbody tr.row-applied:hover td      { background: var(--teal-dim); opacity: 0.8; 
   display: flex;
   flex-direction: column;
   min-width: 0;
+  /* The single scrolling region — sidebar and any sticky header inside here
+     (e.g. .filter-bar) now stay fixed correctly, since they're no longer
+     sharing a scroll container with page content. */
+  height: 100vh;
+  overflow-y: auto;
 }
 .sb-content > main,
 .sb-content > .app {

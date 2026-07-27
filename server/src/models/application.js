@@ -123,11 +123,22 @@ const applicationSchema = new mongoose.Schema(
     dismissed: { type: Boolean, default: false }, // carried over from UserJobState semantics
     applied:   { type: Boolean, default: false },  // denormalized convenience flag, true once SUBMITTED
     appliedAt: Date,
+
+    // Denormalized copy of statusHistory[statusHistory.length-1].at, kept in
+    // sync by utils/applicationState.js's transition() on every status
+    // change. Exists purely so GET /applications can sort/paginate by "most
+    // recently changed" (routes/applications.js's 'updated_recent' sort) at
+    // the MongoDB query level — statusHistory is an array and can't be
+    // indexed/sorted directly without loading every candidate document into
+    // Node first, which is what made Issues/Done slow once REJECTED alone
+    // passed several thousand documents.
+    lastStatusChangeAt: { type: Date, default: Date.now, index: true },
   },
   { timestamps: true }
 );
 
 applicationSchema.index({ userId: 1, jobId: 1 }, { unique: true });
+applicationSchema.index({ userId: 1, status: 1, lastStatusChangeAt: -1 });
 
 const Application = mongoose.model('Application', applicationSchema);
 
