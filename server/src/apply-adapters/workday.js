@@ -51,11 +51,28 @@ async function submitWorkday({ application, job, resumeVariant }) {
     // the application entry point on the job detail page.
     const applyButton = page.locator('button:has-text("Apply"), a:has-text("Apply")').first();
     if (!application.sessionState?.currentUrl && await applyButton.count() > 0) {
+      await applyButton.waitFor({ state: 'visible', timeout: 8000 }).catch(() => {});
       await Promise.all([
         page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {}),
         applyButton.click().catch(() => {}),
       ]);
       await page.waitForTimeout(1500);
+    }
+
+    // Confirmed via live testing: "Apply" opens a "Start Your Application"
+    // modal (Autofill with Resume / Apply Manually / Use My Last Application)
+    // rather than the wizard directly — without this click the adapter never
+    // reached the real form OR the account gate below, and silently found
+    // nothing to fill. "Apply Manually" is the only option that puts real
+    // candidate-supplied values into named fields under our own control
+    // rather than handing the resume to Workday's own parsing/autofill.
+    const applyManuallyLink = page.locator('a:has-text("Apply Manually"), button:has-text("Apply Manually")').first();
+    if (!application.sessionState?.currentUrl && await applyManuallyLink.count() > 0) {
+      await Promise.all([
+        page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {}),
+        applyManuallyLink.click().catch(() => {}),
+      ]);
+      await page.waitForTimeout(4000);
     }
 
     // Workday's account gate is a real, hard blocker — it is NOT a login
@@ -66,9 +83,16 @@ async function submitWorkday({ application, job, resumeVariant }) {
     // "Sign In"/"Create Account" page markers rather than assuming
     // formInspection.requiresLogin already caught it, since that check runs
     // at inspect time and this page may have changed since.
+    //
+    // NOT gated on a password field being present too — confirmed via live
+    // testing that step 1 of Workday's wizard ("Create Account/Sign In") only
+    // shows a Sign-In/Create-Account CHOICE, no password field renders until
+    // one of those is picked. Requiring a password field here meant this
+    // check silently failed to fire on that exact step, so ACTION_REQUIRED
+    // never triggered and the adapter fell through into the "not automatable"
+    // path with zero explanation of why.
     const accountGateText = await page.locator('body').innerText().catch(() => '');
-    const needsAccount = /create account|sign in to workday|already have an account/i.test(accountGateText)
-      && await page.locator('input[type="password"]').count() > 0;
+    const needsAccount = /create account|sign in to workday|already have an account|create account\/sign in/i.test(accountGateText);
     if (needsAccount) {
       await saveSessionState(ctx, application._id.toString());
       return {

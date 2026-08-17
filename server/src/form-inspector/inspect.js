@@ -9,7 +9,17 @@ const { extractFields } = require('./extractFields');
 const detectLoginWall = async (page) => {
   const hasPasswordField = await page.locator('input[type="password"]').count() > 0;
   const bodyText = (await page.locator('body').innerText().catch(() => '')).toLowerCase();
-  const loginMarkers = ['sign in to apply', 'log in to continue', 'create an account to apply'];
+  const loginMarkers = [
+    'sign in to apply', 'log in to continue', 'create an account to apply',
+    // Workday's own account gate, confirmed via live testing: after Apply ->
+    // Apply Manually, step 1 of the resulting 7-step wizard is always
+    // "Create Account/Sign In" — no password field renders until the
+    // candidate picks create-vs-sign-in, so hasPasswordField alone doesn't
+    // catch it, and without this the gate silently reported fieldCount: 0,
+    // requiresLogin: false instead of the accurate "this needs a human to
+    // log in or create a Workday account first."
+    'create account/sign in',
+  ];
   return hasPasswordField || loginMarkers.some(m => bodyText.includes(m));
 };
 
@@ -112,14 +122,45 @@ async function inspect(applyUrl) {
       // SmartRecruiters' own apply CTA text — confirmed via live testing
       // (jobs.smartrecruiters.com job pages never show form fields
       // directly, only this link, which the generic phrases above don't match).
-      'a:has-text("I\'m interested"), button:has-text("I\'m interested")'
+      'a:has-text("I\'m interested"), button:has-text("I\'m interested"), ' +
+      // Workday's own apply CTA — exact-text match (not has-text/substring)
+      // since a bare "Apply" would otherwise risk matching unrelated chrome
+      // ("Apply Filters" etc.) elsewhere on the page.
+      'a:text-is("Apply"), button:text-is("Apply")'
     ).first();
+    // Confirmed via live testing on a real Workday posting: Workday's Angular
+    // app hydrates client-side well after domcontentloaded — the fixed
+    // 1500ms wait below meant applyLink.count() was checked before the
+    // button even existed in the DOM, so the click never fired and
+    // extraction ran against the still-empty pre-hydration shell (0 fields,
+    // wrongly reported automationCapability: NONE on a fully applyable job).
+    // waitFor with a real timeout only blocks as long as actually needed —
+    // a no-op on platforms where the link is already there immediately.
+    await applyLink.waitFor({ state: 'visible', timeout: 8000 }).catch(() => {});
     if (await applyLink.count() > 0) {
       await Promise.all([
         page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 10000 }).catch(() => {}),
         applyLink.click().catch(() => {}),
       ]);
       await page.waitForTimeout(1500);
+    }
+
+    // Workday-specific second gate, confirmed via live testing: clicking
+    // "Apply" doesn't reveal the form directly — it opens a "Start Your
+    // Application" modal offering Autofill with Resume / Apply Manually /
+    // Use My Last Application. "Apply Manually" is the only one of the three
+    // that reveals a blank form with real named fields for OUR answerAgent to
+    // fill from verified candidate facts — "Autofill with Resume" hands
+    // control to Workday's OWN resume-parsing AI instead, which we have no
+    // visibility into or control over. Harmless no-op on every other platform
+    // (this link never exists there).
+    const applyManuallyLink = page.locator('a:has-text("Apply Manually"), button:has-text("Apply Manually")').first();
+    if (await applyManuallyLink.count() > 0) {
+      await Promise.all([
+        page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 10000 }).catch(() => {}),
+        applyManuallyLink.click().catch(() => {}),
+      ]);
+      await page.waitForTimeout(4000);
     }
 
     const html = await page.content();
