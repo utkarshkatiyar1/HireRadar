@@ -23,6 +23,12 @@ const EXPIRED_JOB_MARKERS = [
   'is no longer open', 'position has been filled', 'no longer accepting applications',
   'job you are looking for is no longer', 'this posting is no longer available',
   'job not found', 'was not found', 'job you requested was not found',
+  // SmartRecruiters' own wording, confirmed via live testing — without this,
+  // an expired SmartRecruiters posting fell through to the generic
+  // extraction path, which then picked up the page's WeChat-share-widget
+  // input as if it were a real application field and reported
+  // automationCapability: FULL on a job that was never applyable at all.
+  'this job has expired', 'sorry, this job has expired',
 ];
 
 const detectExpiredJob = async (page) => {
@@ -58,6 +64,13 @@ const detectCaptcha = async (page) => {
     // no matching fact). Checking for this element directly here means
     // CAPTCHA presence is caught even when the visible widget alone isn't.
     'textarea[name="g-recaptcha-response"]', 'input[name="g-recaptcha-response"]',
+    // DataDome (used by SmartRecruiters' real apply page, confirmed via live
+    // testing: the "I'm interested" click-through lands on a 403 challenge
+    // page served entirely by geo.captcha-delivery.com, with zero fields of
+    // any kind — none of the selectors above matched it, so it inspected as
+    // captchaPresent: false / automationCapability: FULL despite the real
+    // form never having been reachable at all).
+    'iframe[src*="captcha-delivery.com"]', 'script[src*="captcha-delivery.com"]',
   ];
   for (const sel of selectors) {
     if (await page.locator(sel).count() > 0) return true;
@@ -95,7 +108,11 @@ async function inspect(applyUrl) {
     // though the real application page was fully fillable. Harmless no-op
     // if no such link exists (Greenhouse pages already show the form directly).
     const applyLink = page.locator(
-      'a:has-text("Apply for this job"), a:has-text("Apply for this Job"), a:has-text("Apply now"), button:has-text("Apply for this job"), button:has-text("Apply for this Job")'
+      'a:has-text("Apply for this job"), a:has-text("Apply for this Job"), a:has-text("Apply now"), button:has-text("Apply for this job"), button:has-text("Apply for this Job"), ' +
+      // SmartRecruiters' own apply CTA text — confirmed via live testing
+      // (jobs.smartrecruiters.com job pages never show form fields
+      // directly, only this link, which the generic phrases above don't match).
+      'a:has-text("I\'m interested"), button:has-text("I\'m interested")'
     ).first();
     if (await applyLink.count() > 0) {
       await Promise.all([

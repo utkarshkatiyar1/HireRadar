@@ -177,6 +177,15 @@ async function extractFields(page) {
       }
       if (label && isUuidShaped(label)) label = '';
 
+      // Social-share widgets ("Copy the link and open WeChat to share",
+      // "Share via LinkedIn") are common page chrome on SmartRecruiters job
+      // postings — confirmed via live testing: the widget's own caption has
+      // no name/id, so the walk-up label resolution above picks up its text
+      // as if it were a real question, shipping a fake answerable field and
+      // reporting automationCapability: FULL on a page with zero real form
+      // fields.
+      if (label && /copy the link|open wechat|share (this job|via|on) ?(linkedin|twitter|facebook)?/i.test(label)) return;
+
       // No positional fallback (`field_${n}`) — a key/label that isn't
       // actually derived from the form is worse than surfacing the gap: it
       // silently ships to review as an unanswerable, meaningless field the
