@@ -21,14 +21,30 @@ const mergeUserState = async (jobs, userId) => {
         applied:   !!s?.applied,
         appliedAt: s?.appliedAt ?? null,
         dismissed: !!s?.dismissed,
+        // Populated by the background pass in utils/jobMatchBatch.js —
+        // null for jobs not yet scored for this user (new jobs since the
+        // last cron tick, or a candidate profile that didn't exist yet).
+        matchScore: s?.matchScore?.computedAt ? s.matchScore.total : null,
+        // Whether that matchScore includes a real embedding similarity
+        // signal, vs. a keyword-only fallback (quota/provider outage — see
+        // utils/jobMatch.js). filter.js's keyword lists are known-incomplete,
+        // so a keyword-only score is lower-confidence and must not outrank
+        // a real semantic score — see byMatchThenRecency below.
+        hasSemanticScore: !!(s?.matchScore?.computedAt && s.matchScore.semanticScore != null),
       };
     })
     .filter(j => !j.dismissed);
 };
 
+// Smart-filter mode narrows to a tighter recency window than raw/history
+// mode's 15-day cutoff — a personalized "recent + best match" view rather
+// than the broader browse-everything list raw mode provides.
+const SMART_FILTER_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+
 router.get('/', requireAuth, async (req, res) => {
   try {
     const userId = oid(req.user.uid);
+    const isSmartFilter = req.query.raw !== '1';
 
     const cutoff = new Date(Date.now() - 15 * 24 * 60 * 60 * 1000);
 
@@ -61,16 +77,44 @@ router.get('/', requireAuth, async (req, res) => {
       new Date(effectivePostedAt(b)) - new Date(effectivePostedAt(a))
       || (b.postedAtConfidence ?? 0) - (a.postedAtConfidence ?? 0);
 
-    if (req.query.raw === '1') {
-      return res.json(locationOk.sort(byRecency));
+    // Personalized match score (utils/jobMatchBatch.js) takes priority over
+    // recency when both jobs being compared have one — a job scored 90 last
+    // week should still outrank an unremarkable job posted an hour ago.
+    // Ranking tiers, highest first:
+    //   1. Jobs with a real semantic (embedding) score — the trustworthy signal
+    //   2. Jobs with only a keyword-fallback score (quota/provider outage) —
+    //      filter.js's keyword lists are known-incomplete, so these can look
+    //      confident (e.g. a neutral ~50) while being wrong; never let one
+    //      outrank a real semantic match regardless of its numeric score
+    //   3. Unscored jobs (not yet reached by the batch pass) — byRecency only
+    const matchTier = (j) => {
+      if (j.matchScore == null) return 0;
+      return j.hasSemanticScore ? 2 : 1;
+    };
+    const byMatchThenRecency = (a, b) => {
+      const tierA = matchTier(a), tierB = matchTier(b);
+      if (tierA !== tierB) return tierB - tierA;
+      if (tierA === 0) return byRecency(a, b); // both unscored
+      return b.matchScore - a.matchScore || byRecency(a, b); // both same tier, real numbers to compare
+    };
+
+    if (!isSmartFilter) {
+      return res.json(locationOk.sort(byMatchThenRecency));
     }
 
+    // Smart filter: tighter recency window, and no backfilling of
+    // already-applied jobs outside it — this view is "recent + best match",
+    // not "everything I've ever touched". Raw/history mode above still shows
+    // the full 15-day set plus applied-job backfill.
+    const smartCutoff = new Date(Date.now() - SMART_FILTER_WINDOW_MS);
+    const smartRecent = locationOk.filter(j => new Date(effectivePostedAt(j)) >= smartCutoff);
+
     const threshold = prefs.scoreThreshold ?? DEFAULTS.scoreThreshold;
-    const jobs = locationOk
+    const jobs = smartRecent
       .filter(j => !isSenior(j.title, prefs))
       .map(j => ({ ...j, score: scoreJob(j, prefs) }))
       .filter(j => j.score >= threshold)
-      .sort((a, b) => byRecency(a, b) || b.score - a.score);
+      .sort((a, b) => byMatchThenRecency(a, b) || b.score - a.score);
     res.json(jobs);
   } catch (e) {
     res.status(500).json({ error: e.message });

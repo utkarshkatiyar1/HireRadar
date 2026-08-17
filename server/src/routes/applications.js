@@ -8,7 +8,7 @@ const { Application } = require('../models/application');
 const { transition, InvalidTransitionError } = require('../utils/applicationState');
 const { effectivePostedAt } = require('../utils/recency');
 const { discoverApplicationsForUser } = require('../utils/applicationDiscovery');
-const { getApplyQueue, getPipelineQueue } = require('../queue/queues');
+const { getApplyQueue, getPipelineQueue, getInspectionQueue } = require('../queue/queues');
 const { buildSignedScreenshotUrl, verifyScreenshotSignature } = require('../utils/screenshotSigning');
 
 const SCREENSHOT_DIR = path.join(__dirname, '..', '..', 'uploads', 'screenshots');
@@ -148,6 +148,162 @@ router.post('/:id/prepare', requireAuth, async (req, res) => {
   }
 });
 
+// POST /applications/bulk-prepare — { applicationIds: string[] }
+// Starts form-inspection+answer-drafting for up to BULK_PREPARE_MAX
+// applications in one call. This is the batch counterpart to
+// POST /:id/prepare, added so the review workflow can be "select N matched
+// jobs, move them all to prepare" instead of clicking Prepare one at a time.
+// Capped (not unlimited) deliberately — this fans out real Playwright
+// browser launches + LLM calls per application; an unbounded batch risks
+// blowing through LLM budget or firing enough concurrent browser sessions at
+// once to look like automated abuse to the target ATS.
+const BULK_PREPARE_MAX = 15;
+
+router.post('/bulk-prepare', requireAuth, async (req, res) => {
+  try {
+    const userId = oid(req.user.uid);
+    const { applicationIds } = req.body;
+    if (!Array.isArray(applicationIds) || !applicationIds.length) {
+      return res.status(400).json({ error: 'applicationIds must be a non-empty array' });
+    }
+    if (applicationIds.length > BULK_PREPARE_MAX) {
+      return res.status(400).json({ error: `Cannot prepare more than ${BULK_PREPARE_MAX} applications at once (got ${applicationIds.length})` });
+    }
+
+    const applications = await Application.find({
+      _id: { $in: applicationIds.map(oid) },
+      userId,
+      status: 'READY_FOR_PREPARATION',
+    });
+
+    const preparable = applications.map(a => a._id.toString());
+    const skipped = applicationIds.filter(id => !preparable.includes(id));
+
+    if (preparable.length) {
+      await getPipelineQueue().addBulk(
+        preparable.map(applicationId => ({ name: 'prepareTrigger', data: { applicationId } }))
+      );
+    }
+
+    res.json({ ok: true, started: preparable.length, skipped });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /applications/bulk-submit — { applicationIds: string[] }
+// Submits up to BULK_SUBMIT_MAX already-APPROVED applications in one call.
+// Deliberately scoped to APPROVED only — every one of these was already
+// individually reviewed (drafted answers looked at, tier checked) at the
+// POST /:id/approve step; this only batches the mechanical "now actually
+// submit it" step, it does NOT let a human skip looking at any application's
+// answers. That's the real difference from a hypothetical "bulk-approve
+// sight-unseen" — this endpoint intentionally does not exist, since it would
+// re-open exactly the wrong-answer/no-review risk the approval gate exists
+// to prevent. Same MANUAL-tier guard as POST /:id/submit, re-checked here
+// too since PipelineConfig/the application's tier could still have changed
+// between approval and this call.
+const BULK_SUBMIT_MAX = 15;
+
+router.post('/bulk-submit', requireAuth, async (req, res) => {
+  try {
+    const userId = oid(req.user.uid);
+    const { applicationIds } = req.body;
+    if (!Array.isArray(applicationIds) || !applicationIds.length) {
+      return res.status(400).json({ error: 'applicationIds must be a non-empty array' });
+    }
+    if (applicationIds.length > BULK_SUBMIT_MAX) {
+      return res.status(400).json({ error: `Cannot submit more than ${BULK_SUBMIT_MAX} applications at once (got ${applicationIds.length})` });
+    }
+
+    const applications = await Application.find({
+      _id: { $in: applicationIds.map(oid) },
+      userId,
+      status: 'APPROVED',
+    });
+
+    const submittable = [];
+    const blockedManual = [];
+    for (const application of applications) {
+      if (application.confidenceTier === 'MANUAL') {
+        blockedManual.push(application._id.toString());
+        continue;
+      }
+      transition(application, 'APPLYING', 'bulk submit trigger');
+      await application.save();
+      submittable.push(application._id.toString());
+    }
+
+    if (submittable.length) {
+      await getApplyQueue().addBulk(
+        submittable.map(applicationId => ({ name: 'submit', data: { applicationId } }))
+      );
+    }
+
+    const skipped = applicationIds.filter(id => !submittable.includes(id) && !blockedManual.includes(id));
+    res.json({ ok: true, started: submittable.length, blockedManual, skipped });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /applications/:id/reprepare — re-runs resume routing, answer
+// drafting, and verification on an already-drafted (READY_FOR_APPROVAL)
+// application, without re-inspecting the form (its fields/platform haven't
+// changed). Real use case: your Candidate Profile was incomplete when this
+// was first prepared, so most answers came back null — after filling in
+// facts/profile fields, re-running preparation picks them up without
+// needing an admin retry or waiting for a fresh scrape cycle.
+router.post('/:id/reprepare', requireAuth, async (req, res) => {
+  try {
+    const userId = oid(req.user.uid);
+    const application = await Application.findOne({ _id: oid(req.params.id), userId });
+    if (!application) return res.status(404).json({ error: 'Not found' });
+    if (application.status !== 'READY_FOR_APPROVAL') {
+      return res.status(409).json({ error: `Cannot reprepare an application in status ${application.status}` });
+    }
+
+    transition(application, 'PREPARING', 'user requested reprepare');
+    await application.save();
+
+    await getPipelineQueue().add('prepare', { applicationId: application._id.toString() });
+    res.json({ ok: true, message: 'Reprepare started' });
+  } catch (e) {
+    if (e instanceof InvalidTransitionError) return res.status(409).json({ error: e.message });
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /applications/:id/reinspect — forces a fresh form-inspection (real
+// browser, real DOM re-extraction), then proceeds through preparation same
+// as the original prepare flow. Distinct from reprepare above: reprepare
+// reuses the EXISTING formInspection.fields snapshot, which does nothing
+// when the bad data is IN that snapshot (e.g. a site-search widget or
+// CAPTCHA response field that got mis-extracted as a real question — see
+// form-inspector/extractFields.js's incident comments; a bug fix there only
+// helps applications inspected AFTER the fix, not ones already snapshotted
+// with the bad field baked in). Only a real re-inspection re-runs DOM
+// extraction and can actually drop a field like that.
+router.post('/:id/reinspect', requireAuth, async (req, res) => {
+  try {
+    const userId = oid(req.user.uid);
+    const application = await Application.findOne({ _id: oid(req.params.id), userId });
+    if (!application) return res.status(404).json({ error: 'Not found' });
+    if (!['READY_FOR_APPROVAL', 'DRY_RUN_COMPLETED'].includes(application.status)) {
+      return res.status(409).json({ error: `Cannot reinspect an application in status ${application.status}` });
+    }
+
+    transition(application, 'INSPECTING_FORM', 'user requested reinspect — re-running form inspection');
+    await application.save();
+
+    await getInspectionQueue().add('inspect', { applicationId: application._id.toString() });
+    res.json({ ok: true, message: 'Reinspect started' });
+  } catch (e) {
+    if (e instanceof InvalidTransitionError) return res.status(409).json({ error: e.message });
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // POST /applications/:id/approve — { resumeVariantId?, submit: boolean }
 // "Approve & Submit" (submit:true) vs "Approve Draft" (submit:false) are two
 // explicit, unambiguous actions — approving never silently defers submission.
@@ -157,6 +313,31 @@ router.post('/:id/approve', requireAuth, async (req, res) => {
     const { resumeVariantId, submit } = req.body;
     const application = await Application.findOne({ _id: oid(req.params.id), userId });
     if (!application) return res.status(404).json({ error: 'Not found' });
+
+    // confidenceTier is set once by agents/pipeline.js's runPreparation and
+    // is otherwise purely advisory for the UI to display — nothing
+    // previously stopped a direct API call (or a UI bug) from submitting a
+    // MANUAL-tier application, which exists specifically to force a human to
+    // look at sensitive/low-confidence answers (salary, work authorization,
+    // etc — see agents/computeTier.js) before they go out.
+    if (submit && application.confidenceTier === 'MANUAL') {
+      return res.status(409).json({
+        error: 'This application requires manual review before it can be submitted — one or more answers are low-confidence or touch a sensitive field (salary, work authorization, etc). Review and edit the answers, then approve as a draft first.',
+      });
+    }
+
+    // submit:false (Approve Draft) IS the human review this gate exists to
+    // require — clearing MANUAL here is what lets POST /:id/submit later
+    // actually work. Previously this never happened: the tier stayed
+    // MANUAL forever, so a MANUAL-tier application could be Approved as a
+    // Draft but then had literally no path to ever being submitted through
+    // this tool — a real dead end, not the "review then proceed" gate it
+    // was meant to be. Reviewed_MANUAL (not AUTO/QUICK_APPROVE/etc) keeps
+    // the distinction visible in the UI/audit trail that this one needed a
+    // human look, without leaving it permanently blocked.
+    if (!submit && application.confidenceTier === 'MANUAL') {
+      application.confidenceTier = 'REVIEWED_MANUAL';
+    }
 
     if (resumeVariantId) application.resumeVariantId = oid(resumeVariantId);
     transition(application, 'APPROVED', submit ? 'approved with submit' : 'approved as draft');
@@ -306,6 +487,15 @@ router.post('/:id/submit', requireAuth, async (req, res) => {
     const userId = oid(req.user.uid);
     const application = await Application.findOne({ _id: oid(req.params.id), userId });
     if (!application) return res.status(404).json({ error: 'Not found' });
+
+    // Same guard as POST /:id/approve{submit:true} — this is the second path
+    // into APPLYING (for DRAFT_ONLY/MANUAL/QUICK_APPROVE-without-auto-submit
+    // tiers approved as a draft earlier), so it needs the same tier check.
+    if (application.confidenceTier === 'MANUAL') {
+      return res.status(409).json({
+        error: 'This application requires manual review before it can be submitted — one or more answers are low-confidence or touch a sensitive field. Review and edit the answers first.',
+      });
+    }
 
     transition(application, 'APPLYING', 'manual submit trigger');
     await application.save();

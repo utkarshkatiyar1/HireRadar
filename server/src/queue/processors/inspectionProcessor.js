@@ -38,6 +38,14 @@ module.exports = async function inspectionProcessor(job) {
   }
 
   if (result.automationCapability === 'NONE') {
+    // Clear any answers from a PRIOR prepare/reinspect cycle — a real
+    // incident: reinspecting an application that previously had a bad field
+    // (e.g. a mis-extracted site-search widget) landed here with a fresh,
+    // correctly-empty formInspection.fields, but the OLD application.answers
+    // array from the earlier cycle was never touched, so the review screen
+    // kept showing the stale bad answer even though inspection had just
+    // proven the form itself has nothing to draft against.
+    application.answers = [];
     application.confidenceTier = 'MANUAL';
     transition(application, 'READY_FOR_APPROVAL', 'form cannot be automated — manual-only, skipping answer generation');
     await application.save();

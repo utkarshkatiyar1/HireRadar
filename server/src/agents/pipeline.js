@@ -62,8 +62,15 @@ async function runEvaluation(applicationId) {
     llmStatus: eligResult.llmStatus,
   };
 
-  if (!eligResult.passed) {
-    transition(application, 'REJECTED', eligResult.reasons?.join('; ') || 'failed eligibility');
+  // passed === null means the LLM fallback for a genuinely ambiguous
+  // eligibility question (e.g. unparseable experience requirement) was
+  // unavailable (quota/outage) — never auto-continue on an undecided
+  // eligibility check. REJECTED here is a soft rejection with the ambiguity
+  // in `reasons`, not a real disqualification; the admin retry route
+  // (POST /admin/applications/:id/retry) re-runs evaluation once the LLM is
+  // back, exactly like a REJECTED-for-real-reasons application would.
+  if (eligResult.passed !== true) {
+    transition(application, 'REJECTED', eligResult.reasons?.join('; ') || (eligResult.passed === null ? 'eligibility undecided — LLM unavailable' : 'failed eligibility'));
     await application.save();
     return application;
   }
@@ -124,9 +131,30 @@ async function runPreparation(applicationId) {
   application.resumeVariantId = routing.resumeVariantId;
 
   const neverAnswerFields = new Set(policy.neverAnswerFields || []);
-  const answerableFields = (application.formInspection?.fields || []).filter(f => !neverAnswerFields.has(f.key));
+  // Fields with no discoverable label (form-inspector/inspect.js's
+  // extractFields couldn't find a <label>, aria-label, placeholder, or name)
+  // are typically hidden companion inputs Greenhouse/etc. generate alongside
+  // a visible dropdown/select question — auto-populated by the page's own
+  // JS when the visible counterpart is filled, not something a human or
+  // this pipeline can meaningfully answer directly. Excluding them from
+  // drafting keeps the review screen free of blank "" rows; the apply-
+  // adapter still sees them via formInspection.fields (untouched here) in
+  // case it ever needs to handle them at actual fill time.
+  const answerableFields = (application.formInspection?.fields || [])
+    .filter(f => !neverAnswerFields.has(f.key))
+    .filter(f => !f.unresolvedLabel)
+    .filter(f => f.label && f.label.trim().length > 0)
+    // File-upload fields (resume/cover letter/etc) are never text-answered
+    // — the actual attach happens separately, via resumeVariant.storageKey
+    // in the apply-adapters (setInputFiles), independent of
+    // application.answers entirely. Previously these went through the same
+    // text-drafting path as everything else, came back "left blank — no
+    // matching fact, 0% confidence" (correctly — there IS no text fact for
+    // a file field), and showed up on the review screen looking like a
+    // failure when the resume attach was actually working fine separately.
+    .filter(f => f.fieldType !== 'file');
 
-  const draftAnswers = await answerAgent(job, profile, answerableFields);
+  const draftAnswers = await answerAgent(job, profile, answerableFields, policy);
   const verifiedAnswers = await verifier(draftAnswers, profile);
   application.answers = verifiedAnswers;
 

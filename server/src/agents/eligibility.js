@@ -98,12 +98,19 @@ module.exports = async function eligibility(_application, job, profile, policy) 
     return { passed: llmResult.passed, reasons: [...det.reasons, ...llmResult.reasons] };
   } catch (err) {
     if (err instanceof LlmQuotaError || err instanceof LlmError) {
-      // Free-tier/quota unavailable — never fail the whole application over
-      // an LLM outage. Fall back to passing with the ambiguity surfaced,
-      // rather than silently rejecting a possibly-good match.
+      // Free-tier/quota unavailable. Previously this defaulted to
+      // passed:true, on the reasoning that we shouldn't reject a possibly-
+      // good match over an outage — but in an unattended bulk-apply flow
+      // nobody reads `reasons` before the recommendation reaches
+      // READY_FOR_PREPARATION, so an outage on a genuinely ambiguous
+      // experience gap silently recommended jobs the candidate may not
+      // qualify for at all. Fail closed instead: surface it as its own
+      // reviewable state rather than a same-looking pass or an opaque
+      // rejection — the caller (agents/pipeline.js) treats passed:null as
+      // "needs a human, not the LLM, to decide" rather than auto-continuing.
       return {
-        passed: true,
-        reasons: [...det.reasons, `LLM eligibility check skipped (${err.name}) — ambiguous: ${det.ambiguousAspects.join('; ')}`],
+        passed: null,
+        reasons: [...det.reasons, `LLM eligibility check unavailable (${err.name}) — could not resolve ambiguous aspects: ${det.ambiguousAspects.join('; ')}`],
         llmStatus: 'SKIPPED_QUOTA',
       };
     }

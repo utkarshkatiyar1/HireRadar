@@ -13,9 +13,16 @@ const pipelineConfigSchema = new mongoose.Schema(
       draftOnlyMin:    { type: Number, default: 50 },
     },
     allowAutoSubmit: {
-      greenhouse: { type: Boolean, default: false },
-      lever:      { type: Boolean, default: false },
-      ashby:      { type: Boolean, default: false },
+      greenhouse:      { type: Boolean, default: false },
+      lever:           { type: Boolean, default: false },
+      ashby:           { type: Boolean, default: false },
+      // Same conservative default as the original three — these adapters
+      // (apply-adapters/workday.js, smartrecruiters.js, eightfold.js) exist
+      // but haven't been confirmed against real live postings the way
+      // Greenhouse/Lever/Ashby were, so live submission stays opt-in only.
+      workday:         { type: Boolean, default: false },
+      smartrecruiters: { type: Boolean, default: false },
+      eightfold:       { type: Boolean, default: false },
     },
     alwaysManualFields:       { type: [String], default: () => ['salary_expectation', 'work_authorization', 'visa_status', 'criminal_history'] },
     maxApplicationsPerDayGlobal: { type: Number, default: 50 },

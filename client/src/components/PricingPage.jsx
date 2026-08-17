@@ -26,9 +26,9 @@ const PLANS = [
     id: 'pro',
     name: 'Radar Pro',
     tag: 'Most popular',
-    mo: 8,
-    yr: 6,
-    cta: 'Start Pro — $8/mo',
+    mo: 649,
+    yr: 499,
+    ctaVerb: 'Start Pro',
     ctaCls: 'pricing-cta-violet',
     highlight: true,
     features: [
@@ -48,9 +48,9 @@ const PLANS = [
     id: 'elite',
     name: 'Radar Elite',
     tag: 'For serious hunters',
-    mo: 19,
-    yr: 14,
-    cta: 'Go Elite — $19/mo',
+    mo: 1499,
+    yr: 1099,
+    ctaVerb: 'Go Elite',
     ctaCls: 'pricing-cta-teal',
     features: [
       { t: 'Everything in Pro',                  on: true  },
@@ -89,6 +89,8 @@ const FAQ = [
     a: 'Absolutely. Cancel from your profile page — no cancellation fees, no questions. Annual plans are refunded on a pro-rated basis within the first 14 days.',
   },
 ];
+
+const fmtINR = (n) => n.toLocaleString('en-IN');
 
 export default function PricingPage() {
   const [annual, setAnnual] = useState(true);
@@ -142,18 +144,27 @@ export default function PricingPage() {
                   <span className="pr-price-free">Free</span>
                 ) : (
                   <>
-                    <span className="pr-price-cur">$</span>
-                    <span className="pr-price-num">{annual ? plan.yr : plan.mo}</span>
+                    {/* Annual: show the monthly-plan rate struck through as
+                        the "was" price against the discounted annual rate —
+                        reuses the existing mo/yr figures, no separate list
+                        price invented. */}
+                    {annual && (
+                      <span className="pr-price-was">₹{fmtINR(plan.mo)}</span>
+                    )}
+                    <span className="pr-price-cur">₹</span>
+                    <span className="pr-price-num">{fmtINR(annual ? plan.yr : plan.mo)}</span>
                     <span className="pr-price-per">/mo</span>
                   </>
                 )}
               </div>
               {annual && plan.mo > 0 && (
-                <p className="pr-billed-note">Billed ${plan.yr * 12}/yr — saves ${(plan.mo - plan.yr) * 12}</p>
+                <p className="pr-billed-note">Billed ₹{fmtINR(plan.yr * 12)}/yr — saves ₹{fmtINR((plan.mo - plan.yr) * 12)}</p>
               )}
             </div>
 
-            <button className={`pr-cta ${plan.ctaCls}`}>{plan.cta}</button>
+            <button className={`pr-cta ${plan.ctaCls}`}>
+              {plan.mo === 0 ? plan.cta : `${plan.ctaVerb} — ₹${fmtINR(annual ? plan.yr : plan.mo)}/mo`}
+            </button>
 
             <ul className="pr-features">
               {plan.features.map((f, i) => (

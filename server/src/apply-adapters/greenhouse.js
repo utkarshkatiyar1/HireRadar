@@ -1,11 +1,12 @@
 const { chromium } = require('playwright');
 const {
-  takeScreenshot, fillField, shouldSkipSubmission, detectConfirmation,
-  saveSessionState, loadSessionStatePath, clearSessionState,
+  takeScreenshot, shouldSkipSubmission, markSubmitAttempted, detectConfirmation,
+  saveSessionState, loadSessionStatePath, clearSessionState, findUnfilledRequiredFields,
+  fillAllFields, advanceMultiStepForm,
 } = require('./shared');
 const { detectCaptcha } = require('../form-inspector/inspect');
-
-const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122.0 Safari/537.36';
+const { extractFields } = require('../form-inspector/extractFields');
+const { stealthContextOptions, LAUNCH_ARGS, applyStealth } = require('./stealth');
 
 // Simplest of the three ATS adapters — matches existing scrapers/ats/greenhouse.js
 // site structure, and is why it's built first per the plan's staged order.
@@ -24,13 +25,14 @@ async function submitGreenhouse({ application, job, resumeVariant }) {
   const resumeStatePath = loadSessionStatePath(application._id.toString());
   const browser = await chromium.launch({
     headless: true,
-    args: ['--no-sandbox', '--disable-dev-shm-usage'],
+    args: LAUNCH_ARGS,
   });
 
   const ctx = await browser.newContext({
-    userAgent: UA,
+    ...stealthContextOptions(),
     ...(resumeStatePath ? { storageState: resumeStatePath } : {}),
   });
+  await applyStealth(ctx);
   const page = await ctx.newPage();
 
   try {
@@ -45,18 +47,37 @@ async function submitGreenhouse({ application, job, resumeVariant }) {
     const answersByKey = new Map(application.answers.map(a => [a.fieldKey, a]));
     const fillResults = [];
 
-    for (const field of application.formInspection?.fields || []) {
-      const answer = answersByKey.get(field.key);
-      if (!answer || answer.value == null) continue; // never fill from a blank/unanswered field
-      const result = await fillField(page, field, answer.value);
-      fillResults.push({ fieldKey: field.key, ...result });
-    }
+    await fillAllFields(page, application.formInspection?.fields || [], answersByKey, fillResults);
+
+    // Multi-step forms (Personal Info -> Experience -> Questions -> Review)
+    // reveal later steps' fields only after a "Next"/"Continue" click — see
+    // shared.js's advanceMultiStepForm for why a single fill-pass previously
+    // either falsely reported SUBMITTED on a step-advance or left later-step
+    // required fields unfilled with no signal at all.
+    await advanceMultiStepForm(page, application, answersByKey, fillResults, extractFields);
 
     if (resumeVariant?.storageKey) {
-      const resumeInput = page.locator('input[type="file"]').first();
+      // Match the resume's own field (formInspection key/label — Greenhouse
+      // forms often have BOTH a resume and a cover_letter file input, so
+      // blindly grabbing input[type="file"].first() risks uploading to
+      // whichever one happens to come first in DOM order, or uploading
+      // nothing at all if it's the cover letter slot instead.
+      const resumeField = (application.formInspection?.fields || [])
+        .find(f => f.fieldType === 'file' && /resume|cv/i.test(`${f.key} ${f.label}`));
+      const resumeInput = resumeField
+        ? page.locator(`[name="${resumeField.key}"], #${resumeField.key}`).first()
+        : page.locator('input[type="file"]').first();
       if (await resumeInput.count() > 0) {
         const resumePath = require('path').join(__dirname, '..', '..', 'uploads', 'resumes', resumeVariant.storageKey);
-        await resumeInput.setInputFiles(resumePath).catch(() => {
+        // force: true — real file inputs are very commonly display:none/
+        // visually hidden behind a styled "Attach" button that triggers the
+        // native picker via JS. Playwright's default actionability check
+        // (visible + enabled) rejects setInputFiles on a hidden input even
+        // though it's a real, functional element — force bypasses that
+        // specific check only, it doesn't skip DOM validity.
+        await resumeInput.setInputFiles(resumePath, { force: true }).then(() => {
+          fillResults.push({ fieldKey: 'resume', filled: true });
+        }).catch(() => {
           fillResults.push({ fieldKey: 'resume', filled: false, reason: 'file input not accessible' });
         });
       }
@@ -87,6 +108,24 @@ async function submitGreenhouse({ application, job, resumeVariant }) {
       };
     }
 
+    // A required field (often a dropdown with no matching option — see
+    // shared.js's fillSelect) that failed to fill must not silently reach
+    // submit — that previously shipped an incomplete application with no
+    // gate at all beyond a human noticing it later in the audit log.
+    const unfilledRequired = findUnfilledRequiredFields(application.formInspection?.fields, fillResults);
+    if (unfilledRequired.length) {
+      await saveSessionState(ctx, application._id.toString());
+      return {
+        outcome: 'ACTION_REQUIRED',
+        pendingQuestion: {
+          question: `Could not fill required field(s): ${unfilledRequired.map(f => f.label || f.key).join(', ')}. Fill manually and continue.`,
+          fieldKey: unfilledRequired[0].key,
+        },
+        screenshotRef: preSubmitScreenshotRef,
+        fillResults,
+      };
+    }
+
     if (dryRun) {
       // Dry-run NEVER clicks submit — logs the would-be action and returns
       // DRY_RUN_COMPLETED, never SUBMITTED, so real analytics/idempotency
@@ -100,6 +139,7 @@ async function submitGreenhouse({ application, job, resumeVariant }) {
     }
 
     const submitButton = page.locator('button[type="submit"], input[type="submit"]').first();
+    await markSubmitAttempted(application._id);
     await submitButton.click();
     await page.waitForLoadState('networkidle', { timeout: 30000 }).catch(() => {});
 

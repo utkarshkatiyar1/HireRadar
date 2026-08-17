@@ -18,6 +18,14 @@ let pipelineQueue, inspectionQueue, applyQueue;
 const defaultJobOptions = {
   removeOnComplete: { count: 500 },
   removeOnFail: { count: 1000 },
+  // No retry previously meant a single transient failure (Playwright crash,
+  // network blip, Mongo hiccup) left a job dead with no automatic recovery —
+  // the application just sat wherever it was mid-transition until a human
+  // noticed and hit the admin retry route. 3 attempts with exponential
+  // backoff absorbs the transient case; a genuinely broken job still ends up
+  // FAILED/SUBMISSION_UNCONFIRMED for a human, same as before.
+  attempts: 3,
+  backoff: { type: 'exponential', delay: 5000 },
 };
 
 const getPipelineQueue = () => {

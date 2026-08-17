@@ -63,6 +63,18 @@ const userJobStateSchema = new mongoose.Schema(
     applied:   { type: Boolean, default: false },
     appliedAt: Date,
     dismissed: { type: Boolean, default: false },
+    // Personalized job-fit score (0-100, keyword+embedding blend — see
+    // utils/jobMatch.js), computed by the batch pass in
+    // utils/jobMatchBatch.js rather than at request time: /jobs can return
+    // up to 2000 jobs, so scoring live on every page load isn't viable
+    // (cost + latency). `computedAt` unset means "not yet scored" — the
+    // /jobs route falls back to the recency+keyword ordering for those.
+    matchScore: {
+      total:       Number,
+      keywordScore:  Number,
+      semanticScore: Number,
+      computedAt:  Date,
+    },
   },
   { timestamps: true }
 );

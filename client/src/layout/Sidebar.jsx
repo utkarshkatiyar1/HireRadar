@@ -48,6 +48,9 @@ export default function Sidebar({ mobileOpen, onCloseMobile }) {
               <span>Candidate Profile</span>
             </NavLink>
           )}
+          <NavLink to="/resumes" className={linkClass} onClick={onCloseMobile}>
+            <span>Resumes</span>
+          </NavLink>
           <NavLink to="/profile" className={linkClass} onClick={onCloseMobile}>
             <span>Preferences</span>
           </NavLink>

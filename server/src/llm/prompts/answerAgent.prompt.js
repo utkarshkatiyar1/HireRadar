@@ -25,14 +25,21 @@ Hard rules — violating any of these makes your answer unusable:
 - If the field asks about something with NO matching fact in the truth store, set value to null, factIds to [], and confidence to 0. Do not guess.
 - Every non-null answer's factIds array must reference the specific fact id(s) in CANDIDATE_TRUTH_STORE that support it — every claim in your answer must trace to at least one listed fact.
 - Keep the answer concise and directly responsive to the field label.
+- If an OPTIONS list is provided, value MUST be exactly one of those strings (or several joined by "|" for a multi-select group), never a paraphrase or a new option — if none of the listed options are supported by a fact, set value to null.
 
 Return ONLY JSON matching the schema.`;
 
-function buildUserPrompt({ fieldLabel, fieldType, relevantFacts }) {
-  return [
-    `FORM_FIELD: label="${fieldLabel}" type="${fieldType}"`,
-    `CANDIDATE_TRUTH_STORE (only these facts may be used):\n${JSON.stringify(relevantFacts, null, 2)}`,
-  ].join('\n\n');
+function buildUserPrompt({ fieldLabel, fieldType, relevantFacts, options }) {
+  const lines = [`FORM_FIELD: label="${fieldLabel}" type="${fieldType}"`];
+  if (options?.length) {
+    // checkbox-group/radio-group fields (see form-inspector/extractFields.js's
+    // groupCheckboxes) — the LLM must pick from these exact option texts,
+    // never invent a new one, since `value` has to resolve back to a real
+    // option key at fill time (see answerAgent.js's resolveGroupAnswer).
+    lines.push(`OPTIONS (value must be one of these exact strings, or multiple joined by "|" for a multi-select checkbox group, or null if none apply):\n${JSON.stringify(options)}`);
+  }
+  lines.push(`CANDIDATE_TRUTH_STORE (only these facts may be used):\n${JSON.stringify(relevantFacts, null, 2)}`);
+  return lines.join('\n\n');
 }
 
 module.exports = { system, buildUserPrompt, schema };

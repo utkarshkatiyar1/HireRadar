@@ -1,7 +1,7 @@
 const { chromium } = require('playwright');
 const { detectPlatform, AUTOMATABLE_PLATFORMS } = require('./platformDetectors');
-
-const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122.0 Safari/537.36';
+const { stealthContextOptions, LAUNCH_ARGS, applyStealth } = require('../apply-adapters/stealth');
+const { extractFields } = require('./extractFields');
 
 // Detects login walls by looking for password inputs or common login-page
 // markers — a page requiring login can't be safely auto-filled with the
@@ -22,6 +22,7 @@ const detectLoginWall = async (page) => {
 const EXPIRED_JOB_MARKERS = [
   'is no longer open', 'position has been filled', 'no longer accepting applications',
   'job you are looking for is no longer', 'this posting is no longer available',
+  'job not found', 'was not found', 'job you requested was not found',
 ];
 
 const detectExpiredJob = async (page) => {
@@ -46,43 +47,22 @@ const detectCaptcha = async (page) => {
     'iframe[src*="recaptcha"]', 'iframe[src*="hcaptcha"]', 'iframe[src*="turnstile"]',
     '.g-recaptcha', '#h-captcha', '[data-sitekey]',
     '[id*="captcha" i]', '[class*="captcha" i]',
+    // A real incident: reCAPTCHA (particularly invisible v3) injects a
+    // hidden textarea[name="g-recaptcha-response"] into the DOM even when
+    // the visible widget iframe/.g-recaptcha div hasn't rendered yet or
+    // isn't present in a form the selectors above matched — this hidden
+    // element is reCAPTCHA's own response token field, not a real question,
+    // but form-inspector/extractFields.js's generic "any input/textarea"
+    // scan had no way to know that and extracted it as an answerable field
+    // (shipped to the review UI as "g-recaptcha-response", 0% confidence,
+    // no matching fact). Checking for this element directly here means
+    // CAPTCHA presence is caught even when the visible widget alone isn't.
+    'textarea[name="g-recaptcha-response"]', 'input[name="g-recaptcha-response"]',
   ];
   for (const sel of selectors) {
     if (await page.locator(sel).count() > 0) return true;
   }
   return false;
-};
-
-// Extracts visible form fields from a job application page: label + input
-// type + required-ness. Best-effort, DOM-generic — real per-platform field
-// mapping (e.g. Greenhouse's specific field names) lives in apply-adapters/
-// at submission time; this stage only needs "what does the answer agent
-// need to answer" and "can this be automated at all".
-const extractFields = async (page) => {
-  return page.evaluate(() => {
-    const fields = [];
-    const inputs = document.querySelectorAll('form input, form textarea, form select');
-    inputs.forEach((el) => {
-      const type = el.tagName === 'TEXTAREA' ? 'textarea' : (el.tagName === 'SELECT' ? 'select' : (el.type || 'text'));
-      if (['hidden', 'submit', 'button', 'password'].includes(type)) return;
-
-      let label = '';
-      if (el.id) {
-        const labelEl = document.querySelector(`label[for="${el.id}"]`);
-        if (labelEl) label = labelEl.innerText.trim();
-      }
-      if (!label && el.closest('label')) label = el.closest('label').innerText.trim();
-      if (!label) label = el.getAttribute('aria-label') || el.getAttribute('placeholder') || el.name || '';
-
-      fields.push({
-        key: el.name || el.id || label || `field_${fields.length}`,
-        label: label.slice(0, 200),
-        fieldType: type,
-        required: el.required || el.getAttribute('aria-required') === 'true',
-      });
-    });
-    return fields;
-  });
 };
 
 // Opens the application URL (NO submission, ever) and extracts platform,
@@ -92,9 +72,10 @@ const extractFields = async (page) => {
 async function inspect(applyUrl) {
   const browser = await chromium.launch({
     headless: true,
-    args: ['--no-sandbox', '--disable-dev-shm-usage'],
+    args: LAUNCH_ARGS,
   });
-  const ctx  = await browser.newContext({ userAgent: UA });
+  const ctx  = await browser.newContext(stealthContextOptions());
+  await applyStealth(ctx);
   const page = await ctx.newPage();
 
   try {
@@ -106,12 +87,38 @@ async function inspect(applyUrl) {
     await page.goto(applyUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
     await page.waitForTimeout(1500);
 
+    // Some platforms (confirmed on Ashby) show only a job overview page —
+    // the actual application form lives behind a separate "Apply" link/
+    // button, sometimes a real navigation to a different URL rather than a
+    // same-page reveal. Without this, inspection saw 0 fields on the
+    // overview page and marked the job automationCapability: NONE even
+    // though the real application page was fully fillable. Harmless no-op
+    // if no such link exists (Greenhouse pages already show the form directly).
+    const applyLink = page.locator(
+      'a:has-text("Apply for this job"), a:has-text("Apply for this Job"), a:has-text("Apply now"), button:has-text("Apply for this job"), button:has-text("Apply for this Job")'
+    ).first();
+    if (await applyLink.count() > 0) {
+      await Promise.all([
+        page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 10000 }).catch(() => {}),
+        applyLink.click().catch(() => {}),
+      ]);
+      await page.waitForTimeout(1500);
+    }
+
     const html = await page.content();
     const platform = detectPlatform(page.url(), html);
     const requiresLogin = await detectLoginWall(page);
     const captchaPresent = await detectCaptcha(page);
     const expired = await detectExpiredJob(page);
     const fields = (requiresLogin || expired) ? [] : await extractFields(page);
+
+    // Diagnostic log — a real incident had automationCapability come back
+    // NONE on a form that a human confirmed (by opening the real page) has
+    // a full set of fillable fields, and there was no visibility into WHICH
+    // of requiresLogin/expired/fields.length=0 actually caused it without
+    // guessing. Cheap enough to always run; strip once the current
+    // investigation is resolved if it's just noise by then.
+    console.log(`[inspect] ${applyUrl} -> platform=${platform} requiresLogin=${requiresLogin} captchaPresent=${captchaPresent} expired=${expired} fieldCount=${fields.length}`);
 
     let automationCapability = 'NONE';
     if (expired) {

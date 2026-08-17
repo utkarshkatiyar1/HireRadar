@@ -3212,6 +3212,15 @@ tbody tr.row-applied:hover td      { background: var(--teal-dim); opacity: 0.8; 
   line-height: 1;
 }
 
+.pr-price-was {
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: var(--text-4);
+  text-decoration: line-through;
+  margin-bottom: 6px;
+  margin-right: 4px;
+}
+
 .pr-price-cur {
   font-size: 1.2rem;
   font-weight: 700;
@@ -3702,6 +3711,31 @@ tbody tr.row-applied:hover td      { background: var(--teal-dim); opacity: 0.8; 
 
 /* ── Approval Queue / Application Detail / Audit Trail (aq-*) ── */
 .aq-list { display: flex; flex-direction: column; gap: 8px; }
+
+.aq-bulk-bar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 16px;
+  margin-bottom: 8px;
+}
+.aq-bulk-selectall {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  color: var(--text-2);
+  cursor: pointer;
+}
+.aq-row-checkbox {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
 
 .aq-row {
   display: flex;

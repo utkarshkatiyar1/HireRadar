@@ -8,10 +8,17 @@ const { detectCaptcha } = require('../form-inspector/inspect');
 const { extractFields } = require('../form-inspector/extractFields');
 const { stealthContextOptions, LAUNCH_ARGS, applyStealth } = require('./stealth');
 
-// Lever adapter — same flow as greenhouse.js (fill -> screenshot -> dry-run
-// stop -> submit -> confirm), generic field-matching via shared.js since
-// Lever's form field naming varies more per-company than Greenhouse's.
-async function submitLever({ application, job, resumeVariant }) {
+// Eightfold adapter — NOT confirmed via live inspection the way
+// greenhouse.js/lever.js/ashby.js were (see workday.js's equivalent
+// disclaimer). Eightfold-hosted career sites are React SPAs (similar
+// structural risk to Ashby's — forms not necessarily wrapped in a <form>
+// element, which form-inspector/extractFields.js already handles generically)
+// and commonly offer a resume-upload-first flow that auto-populates the rest
+// of the form via parsing — this adapter still goes through the normal
+// fill-from-drafted-answers path rather than relying on Eightfold's own
+// resume parser, since the drafted answers are already grounded/verified and
+// re-parsing the resume server-side would bypass that verification entirely.
+async function submitEightfold({ application, job, resumeVariant }) {
   const dryRun = process.env.APPLY_DRY_RUN !== 'false';
   const skipCheck = shouldSkipSubmission(application);
   if (skipCheck.skip) {
@@ -33,18 +40,21 @@ async function submitLever({ application, job, resumeVariant }) {
 
   try {
     const startUrl = application.sessionState?.currentUrl || job.url;
-    // domcontentloaded, not networkidle — many real job-board pages never
-    // reach true network idle (persistent analytics/polling), which turned
-    // a fully-loaded, usable page into a hard 30s timeout failure.
     await page.goto(startUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
-    await page.waitForTimeout(1000);
+    // SPA hydration — same reasoning as ashby.js's equivalent wait.
+    await page.waitForTimeout(1500);
 
-    // Lever postings often need an explicit "Apply for this job" click to
-    // reveal the form.
-    const applyButton = page.locator('a:has-text("Apply for this job"), a.postings-btn').first();
-    if (await applyButton.count() > 0) {
-      await applyButton.click().catch(() => {});
-      await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
+    if (!application.sessionState?.currentUrl) {
+      const applyLink = page.locator(
+        'a:has-text("Apply"), button:has-text("Apply"), a:has-text("Apply Now"), button:has-text("Apply Now")'
+      ).first();
+      if (await applyLink.count() > 0) {
+        await Promise.all([
+          page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 10000 }).catch(() => {}),
+          applyLink.click().catch(() => {}),
+        ]);
+        await page.waitForTimeout(1500);
+      }
     }
 
     const answersByKey = new Map(application.answers.map(a => [a.fieldKey, a]));
@@ -54,20 +64,13 @@ async function submitLever({ application, job, resumeVariant }) {
     await advanceMultiStepForm(page, application, answersByKey, fillResults, extractFields);
 
     if (resumeVariant?.storageKey) {
-      // Match the resume's own field, not just the first file input on the
-      // page — see greenhouse.js's equivalent comment for why (some forms
-      // have a separate cover_letter file input too, and blind .first()
-      // risks uploading to the wrong slot or none at all).
       const resumeField = (application.formInspection?.fields || [])
         .find(f => f.fieldType === 'file' && /resume|cv/i.test(`${f.key} ${f.label}`));
       const resumeInput = resumeField
         ? page.locator(`[name="${resumeField.key}"], #${resumeField.key}`).first()
-        : page.locator('input[name="resume"], input[type="file"]').first();
+        : page.locator('input[type="file"]').first();
       if (await resumeInput.count() > 0) {
         const resumePath = require('path').join(__dirname, '..', '..', 'uploads', 'resumes', resumeVariant.storageKey);
-        // force: true — see greenhouse.js's equivalent comment: real file
-        // inputs are commonly hidden behind a styled button, and Playwright's
-        // default visibility check otherwise rejects a genuinely working input.
         await resumeInput.setInputFiles(resumePath, { force: true }).then(() => {
           fillResults.push({ fieldKey: 'resume', filled: true });
         }).catch(() => {
@@ -79,8 +82,6 @@ async function submitLever({ application, job, resumeVariant }) {
     const preSubmitUrl = page.url();
     const preSubmitScreenshotRef = await takeScreenshot(page, { applicationId: application._id, label: 'pre-submit' });
 
-    // Re-detected LIVE — see greenhouse.js's equivalent comment for why
-    // formInspection.captchaPresent can't be trusted here.
     const hasPasswordField = await page.locator('input[type="password"]').count() > 0;
     const hasCaptcha = await detectCaptcha(page);
     if (hasPasswordField || hasCaptcha) {
@@ -115,7 +116,7 @@ async function submitLever({ application, job, resumeVariant }) {
       return { outcome: 'DRY_RUN_COMPLETED', screenshotRef: preSubmitScreenshotRef, fillResults };
     }
 
-    const submitButton = page.locator('button[type="submit"], input[type="submit"]').first();
+    const submitButton = page.locator('button[type="submit"], button:has-text("Submit Application"), button:has-text("Submit")').first();
     await markSubmitAttempted(application._id);
     await submitButton.click();
     await page.waitForLoadState('networkidle', { timeout: 30000 }).catch(() => {});
@@ -134,4 +135,4 @@ async function submitLever({ application, job, resumeVariant }) {
   }
 }
 
-module.exports = submitLever;
+module.exports = submitEightfold;

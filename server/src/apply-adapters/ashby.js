@@ -1,15 +1,21 @@
 const { chromium } = require('playwright');
 const {
-  takeScreenshot, fillField, shouldSkipSubmission, detectConfirmation,
-  saveSessionState, loadSessionStatePath, clearSessionState,
+  takeScreenshot, shouldSkipSubmission, markSubmitAttempted, detectConfirmation,
+  saveSessionState, loadSessionStatePath, clearSessionState, findUnfilledRequiredFields,
+  fillAllFields, advanceMultiStepForm,
 } = require('./shared');
 const { detectCaptcha } = require('../form-inspector/inspect');
+const { extractFields } = require('../form-inspector/extractFields');
+const { stealthContextOptions, LAUNCH_ARGS, applyStealth } = require('./stealth');
 
-const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122.0 Safari/537.36';
-
-// Ashby adapter — same flow as greenhouse.js/lever.js. Ashby job boards are
-// React SPAs, so the application form is often already present on the job
-// page rather than behind a separate "Apply" click.
+// Ashby adapter — same flow as greenhouse.js/lever.js. Confirmed via direct
+// inspection: Ashby job OVERVIEW pages have zero form fields at all — the
+// real application form lives on a separate /application sub-path, reached
+// via an "Apply for this Job" link that does a real navigation (not a
+// same-page reveal like Lever's). Every field this adapter fills comes from
+// formInspection.fields, which form-inspector/inspect.js now populates by
+// following that same link first — this adapter must do the same or it'll
+// try to fill fields into the wrong (fieldless) page.
 async function submitAshby({ application, job, resumeVariant }) {
   const dryRun = process.env.APPLY_DRY_RUN !== 'false';
   const skipCheck = shouldSkipSubmission(application);
@@ -20,13 +26,14 @@ async function submitAshby({ application, job, resumeVariant }) {
   const resumeStatePath = loadSessionStatePath(application._id.toString());
   const browser = await chromium.launch({
     headless: true,
-    args: ['--no-sandbox', '--disable-dev-shm-usage'],
+    args: LAUNCH_ARGS,
   });
 
   const ctx = await browser.newContext({
-    userAgent: UA,
+    ...stealthContextOptions(),
     ...(resumeStatePath ? { storageState: resumeStatePath } : {}),
   });
+  await applyStealth(ctx);
   const page = await ctx.newPage();
 
   try {
@@ -39,21 +46,44 @@ async function submitAshby({ application, job, resumeVariant }) {
     // SPA hydration — give the form time to render before locating fields.
     await page.waitForTimeout(1500);
 
+    // Follow "Apply for this Job" if present — see the adapter-level comment
+    // above. Skipped when resuming from a saved sessionState (ACTION_REQUIRED
+    // resume), since that state was already captured mid-application.
+    if (!application.sessionState?.currentUrl) {
+      const applyLink = page.locator(
+        'a:has-text("Apply for this job"), a:has-text("Apply for this Job"), a:has-text("Apply now")'
+      ).first();
+      if (await applyLink.count() > 0) {
+        await Promise.all([
+          page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 10000 }).catch(() => {}),
+          applyLink.click().catch(() => {}),
+        ]);
+        await page.waitForTimeout(1500);
+      }
+    }
+
     const answersByKey = new Map(application.answers.map(a => [a.fieldKey, a]));
     const fillResults = [];
 
-    for (const field of application.formInspection?.fields || []) {
-      const answer = answersByKey.get(field.key);
-      if (!answer || answer.value == null) continue;
-      const result = await fillField(page, field, answer.value);
-      fillResults.push({ fieldKey: field.key, ...result });
-    }
+    await fillAllFields(page, application.formInspection?.fields || [], answersByKey, fillResults);
+    await advanceMultiStepForm(page, application, answersByKey, fillResults, extractFields);
 
     if (resumeVariant?.storageKey) {
-      const resumeInput = page.locator('input[type="file"]').first();
+      // Match the resume's own field, not just the first file input on the
+      // page — see greenhouse.js's equivalent comment for why.
+      const resumeField = (application.formInspection?.fields || [])
+        .find(f => f.fieldType === 'file' && /resume|cv/i.test(`${f.key} ${f.label}`));
+      const resumeInput = resumeField
+        ? page.locator(`[name="${resumeField.key}"], #${resumeField.key}`).first()
+        : page.locator('input[type="file"]').first();
       if (await resumeInput.count() > 0) {
         const resumePath = require('path').join(__dirname, '..', '..', 'uploads', 'resumes', resumeVariant.storageKey);
-        await resumeInput.setInputFiles(resumePath).catch(() => {
+        // force: true — see greenhouse.js's equivalent comment: real file
+        // inputs are commonly hidden behind a styled button, and Playwright's
+        // default visibility check otherwise rejects a genuinely working input.
+        await resumeInput.setInputFiles(resumePath, { force: true }).then(() => {
+          fillResults.push({ fieldKey: 'resume', filled: true });
+        }).catch(() => {
           fillResults.push({ fieldKey: 'resume', filled: false, reason: 'file input not accessible' });
         });
       }
@@ -79,12 +109,27 @@ async function submitAshby({ application, job, resumeVariant }) {
       };
     }
 
+    const unfilledRequired = findUnfilledRequiredFields(application.formInspection?.fields, fillResults);
+    if (unfilledRequired.length) {
+      await saveSessionState(ctx, application._id.toString());
+      return {
+        outcome: 'ACTION_REQUIRED',
+        pendingQuestion: {
+          question: `Could not fill required field(s): ${unfilledRequired.map(f => f.label || f.key).join(', ')}. Fill manually and continue.`,
+          fieldKey: unfilledRequired[0].key,
+        },
+        screenshotRef: preSubmitScreenshotRef,
+        fillResults,
+      };
+    }
+
     if (dryRun) {
       clearSessionState(application._id.toString());
       return { outcome: 'DRY_RUN_COMPLETED', screenshotRef: preSubmitScreenshotRef, fillResults };
     }
 
     const submitButton = page.locator('button[type="submit"], button:has-text("Submit Application")').first();
+    await markSubmitAttempted(application._id);
     await submitButton.click();
     await page.waitForLoadState('networkidle', { timeout: 30000 }).catch(() => {});
 

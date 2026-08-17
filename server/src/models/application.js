@@ -61,7 +61,22 @@ const applicationSchema = new mongoose.Schema(
         // field `type: String` inside a nested schema gets misparsed as the
         // SchemaType declaration itself. Use `fieldType` instead; the field
         // key in DB/API stays `type` via the explicit map at the call sites.
-        fields: [{ key: String, label: String, fieldType: { type: String }, required: Boolean, _id: false }],
+        fields: [{
+          key: String, label: String, fieldType: { type: String }, required: Boolean,
+          // True when inspect.js's label-resolution heuristics found no
+          // usable question text at all — surfaced to the reviewer instead
+          // of silently shipping a meaningless "field_5"-style key, and used
+          // by computeTier.js to force MANUAL review on the field.
+          unresolvedLabel: Boolean,
+          // fieldType 'checkbox-group'/'radio-group' only (see
+          // form-inspector/extractFields.js's groupCheckboxes) — the
+          // individual option checkboxes/radios this logical question was
+          // collapsed from, so the answer agent can pick which one(s) to
+          // check and apply-adapters/shared.js's fillCheckboxGroup can act
+          // on each option's own key.
+          options: [{ key: String, optionText: String, _id: false }],
+          _id: false,
+        }],
         automationCapability: { type: String, enum: ['FULL', 'PARTIAL', 'NONE'] },
         inspectedAt:          Date,
       }, { _id: false }),
@@ -86,7 +101,12 @@ const applicationSchema = new mongoose.Schema(
     resumeVariantId: { type: mongoose.Schema.Types.ObjectId, ref: 'ResumeVariant' },
     answers:         [answerSchema],
 
-    confidenceTier: { type: String, enum: ['AUTO', 'QUICK_APPROVE', 'DRAFT_ONLY', 'MANUAL'] },
+    // REVIEWED_MANUAL: set when a MANUAL-tier application is Approved as a
+    // Draft (routes/applications.js's POST /:id/approve) — that action IS
+    // the human review the MANUAL tier exists to require, so it clears the
+    // block on a later real submit. Without this, a MANUAL-tier application
+    // had no path to ever being submitted through this tool at all.
+    confidenceTier: { type: String, enum: ['AUTO', 'QUICK_APPROVE', 'DRAFT_ONLY', 'MANUAL', 'REVIEWED_MANUAL'] },
 
     pendingQuestion: {
       question:  String,
@@ -113,12 +133,29 @@ const applicationSchema = new mongoose.Schema(
 
     idempotencyKey: { type: String, index: true },
 
+    // Set immediately before the apply-adapter's submit-button click (see
+    // apply-adapters/shared.js's markSubmitAttempted), independent of and
+    // earlier than confirmation/status — closes the gap where a worker
+    // crash between click() and application.save() would otherwise look
+    // identical to "never attempted" and get double-submitted on retry.
+    submitAttemptedAt: Date,
+
     confirmation: {
       detected:              Boolean,
       textHash:              String,
       applicationReference:  String,
       finalUrl:               String,
     },
+
+    // Set at discovery time to another JOB's _id (a different scraped url)
+    // when that job has the same company+title+location AND this user
+    // already has an Application against it within the last 30 days — see
+    // utils/applicationDiscovery.js's findPossibleDuplicateJobId. Advisory
+    // only, never auto-skipped (two genuinely different roles can share a
+    // title/location), surfaced on the review screen so the user can skip
+    // the redundant one themselves rather than unknowingly submitting two
+    // applications to the same employer for what's really one job.
+    possibleDuplicateOf: { type: mongoose.Schema.Types.ObjectId, ref: 'Job' },
 
     dismissed: { type: Boolean, default: false }, // carried over from UserJobState semantics
     applied:   { type: Boolean, default: false },  // denormalized convenience flag, true once SUBMITTED

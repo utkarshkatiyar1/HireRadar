@@ -6,9 +6,12 @@ const { transition } = require('../../utils/applicationState');
 const { shouldSkipSubmission } = require('../../apply-adapters/shared');
 
 const ADAPTERS = {
-  GREENHOUSE: () => require('../../apply-adapters/greenhouse'),
-  LEVER:      () => require('../../apply-adapters/lever'),
-  ASHBY:      () => require('../../apply-adapters/ashby'),
+  GREENHOUSE:     () => require('../../apply-adapters/greenhouse'),
+  LEVER:          () => require('../../apply-adapters/lever'),
+  ASHBY:          () => require('../../apply-adapters/ashby'),
+  WORKDAY:        () => require('../../apply-adapters/workday'),
+  SMARTRECRUITERS: () => require('../../apply-adapters/smartrecruiters'),
+  EIGHTFOLD:      () => require('../../apply-adapters/eightfold'),
 };
 
 // BullMQ job processor for the 'apply' queue. job.data: { applicationId }
@@ -23,6 +26,17 @@ module.exports = async function applyProcessor(job) {
 
   const skipCheck = shouldSkipSubmission(application);
   if (skipCheck.skip) {
+    // A prior attempt on this application already clicked submit (see
+    // apply-adapters/shared.js's submitAttemptedAt) and the outcome was
+    // never persisted — most likely a worker crash between the click and
+    // this job's application.save(). Land it in SUBMISSION_UNCONFIRMED for
+    // manual reconciliation rather than leaving it stuck in APPLYING or,
+    // worse, letting a BullMQ retry launch a fresh browser and click submit
+    // again on the real ATS form.
+    if (application.status === 'APPLYING' && application.submitAttemptedAt && !application.confirmation?.detected) {
+      transition(application, 'SUBMISSION_UNCONFIRMED', skipCheck.reason);
+      await application.save();
+    }
     return { applicationId, status: application.status, skipped: true, reason: skipCheck.reason };
   }
 
@@ -56,6 +70,27 @@ module.exports = async function applyProcessor(job) {
     PipelineConfig.findOne({ key: 'default' }).lean(),
   ]);
   if (!job_) throw new Error(`Job ${application.jobId} referenced by Application ${applicationId} not found`);
+
+  // maxApplicationsPerDayGlobal existed in PipelineConfig's schema and the
+  // admin UI as a settable knob but nothing ever read it — there was no
+  // actual cap on daily submission volume anywhere. Only counts real,
+  // confirmed SUBMITTED applications (not dry-runs) toward the cap, and only
+  // blocks when live submission is actually in effect — a dry run's whole
+  // point is to be free to run repeatedly without affecting real quota.
+  if (process.env.APPLY_DRY_RUN === 'false') {
+    const cap = pipelineConfig?.maxApplicationsPerDayGlobal;
+    if (cap != null) {
+      const day0 = new Date(); day0.setUTCHours(0, 0, 0, 0);
+      const submittedToday = await Application.countDocuments({
+        userId: application.userId, status: 'SUBMITTED', appliedAt: { $gte: day0 },
+      });
+      if (submittedToday >= cap) {
+        transition(application, 'SUBMISSION_BLOCKED', `daily submission cap reached (${submittedToday}/${cap} — PipelineConfig.maxApplicationsPerDayGlobal)`);
+        await application.save();
+        return { applicationId, status: application.status };
+      }
+    }
+  }
 
   const platformKey = application.applicationPlatform.toLowerCase();
   const allowed = pipelineConfig?.allowAutoSubmit?.[platformKey];

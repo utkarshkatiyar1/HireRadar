@@ -1,16 +1,20 @@
-const { scoreJob, DEFAULTS } = require('../utils/filter');
 const { callStructured } = require('../llm/callStructured');
 const { resolveModel } = require('../llm/modelRouter');
 const { sanitizeJobDescription, selectSkillsSummary } = require('../llm/sanitize');
+const { keywordSkillMatch, semanticSkillMatch, EMBEDDING_FLOOR } = require('../utils/jobMatch');
 const fitScoringPrompt = require('../llm/prompts/fitScoring.prompt');
 const { LlmError, LlmQuotaError } = require('../llm/errors');
 
-// Deterministic base score (0-100 scale) derived from the existing keyword
-// scoring in filter.js, which returns an unbounded additive score — this
-// clamps/maps it onto the same 0-100 scale the pipeline's fitScore uses.
-function deterministicBaseScore(job, profile) {
-  const raw = scoreJob(job, DEFAULTS); // roughly -9..+9 in practice
-  const skillMatch = Math.max(0, Math.min(100, 50 + raw * 6));
+// Deterministic base score (0-100 scale), blending the keyword skill match
+// with an embedding-based semantic similarity score when available.
+// `semanticScore` (0-100 or null) is blended in alongside the keyword score
+// rather than replacing it — keyword matching catches exact terms embeddings
+// can blur past (e.g. a hard "React" requirement), while embeddings catch
+// paraphrased/related skills keyword matching misses.
+function deterministicBaseScore(job, profile, keywordScore, semanticScore) {
+  const skillMatch = semanticScore == null
+    ? keywordScore
+    : Math.round(keywordScore * 0.5 + semanticScore * 0.5);
 
   let expGap = 70;
   if (profile?.totalExpYears != null && job.exp) {
@@ -25,18 +29,34 @@ function deterministicBaseScore(job, profile) {
   return {
     total,
     breakdown: { skillMatch, evidenceStrength: skillMatch, expGap, companyQuality: 50, salaryPotential: 50, effort: 50 },
-    rationale: 'deterministic keyword-based score',
+    rationale: semanticScore == null
+      ? 'deterministic keyword-based score'
+      : 'deterministic score blending keyword match with embedding-based semantic similarity',
   };
 }
 
 const PLAUSIBLE_THRESHOLD = 40; // below this, an LLM refinement pass isn't worth the call
 
 // Real fit-scoring agent. Always computes a deterministic base score first
-// (cheap, no LLM). Only calls the semantic LLM refinement for candidates
-// that clear a plausibility floor — a job scoring 5/100 deterministically
-// isn't worth spending a call on to see if it's secretly a good match.
+// (cheap, no LLM). The embedding call only runs once the keyword score clears
+// a low floor — a job scoring near-zero on keywords isn't worth a semantic
+// check — and the LLM refinement only runs if the blended score then clears
+// the higher plausibility threshold, same cost-gating shape as before.
 module.exports = async function fitScoring(_application, job, profile) {
-  const base = deterministicBaseScore(job, profile);
+  const keywordScore = keywordSkillMatch(job);
+
+  let semanticScore = null;
+  if (keywordScore >= EMBEDDING_FLOOR) {
+    try {
+      semanticScore = await semanticSkillMatch(job, profile);
+    } catch (err) {
+      if (!(err instanceof LlmQuotaError || err instanceof LlmError)) throw err;
+      // Quota/provider outage on the embedding call — fall back to keyword-only,
+      // same posture as the LLM-refinement fallback below.
+    }
+  }
+
+  const base = deterministicBaseScore(job, profile, keywordScore, semanticScore);
 
   if (base.total < PLAUSIBLE_THRESHOLD) {
     return { ...base, scoredAt: new Date() };

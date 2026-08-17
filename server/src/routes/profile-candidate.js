@@ -27,15 +27,17 @@ router.put('/candidate', requireAuth, async (req, res) => {
   try {
     const userId = oid(req.user.uid);
     const {
-      fullName, phone, currentCTC, expectedCTC, noticePeriodDays, totalExpYears,
-      skills, projects, education, links, workAuthorization, facts,
+      fullName, preferredName, phone, country, currentCTC, expectedCTC, noticePeriodDays, totalExpYears,
+      skills, projects, education, links, workAuthorization, requiresVisaSponsorship, currentlyEligibleToWork, facts,
     } = req.body;
 
     const profile = await CandidateProfile.findOneAndUpdate(
       { userId },
       { $set: {
           ...(fullName !== undefined && { fullName }),
+          ...(preferredName !== undefined && { preferredName }),
           ...(phone !== undefined && { phone }),
+          ...(country !== undefined && { country }),
           ...(currentCTC !== undefined && { currentCTC }),
           ...(expectedCTC !== undefined && { expectedCTC }),
           ...(noticePeriodDays !== undefined && { noticePeriodDays }),
@@ -45,6 +47,8 @@ router.put('/candidate', requireAuth, async (req, res) => {
           ...(education !== undefined && { education }),
           ...(links !== undefined && { links }),
           ...(workAuthorization !== undefined && { workAuthorization }),
+          ...(requiresVisaSponsorship !== undefined && { requiresVisaSponsorship }),
+          ...(currentlyEligibleToWork !== undefined && { currentlyEligibleToWork }),
           ...(facts !== undefined && { facts }),
       } },
       { new: true, upsert: true }
@@ -78,7 +82,8 @@ router.put('/policy', requireAuth, async (req, res) => {
       allowedRoles, blockedCompanies, blockedLocations, minimumScore,
       maximumExperienceGapYears, minimumSalaryLPA, allowUnknownSalary,
       maxApplicationsPerDay, requireApprovalEveryTime, autoSubmitPlatforms,
-      neverAnswerFields, requireManualFields,
+      neverAnswerFields, requireManualFields, autoConsentToDataProcessing,
+      sourceAttributionAnswer,
     } = req.body;
 
     const policy = await ApplicationPolicy.findOneAndUpdate(
@@ -96,6 +101,8 @@ router.put('/policy', requireAuth, async (req, res) => {
           ...(autoSubmitPlatforms !== undefined && { autoSubmitPlatforms }),
           ...(neverAnswerFields !== undefined && { neverAnswerFields }),
           ...(requireManualFields !== undefined && { requireManualFields }),
+          ...(autoConsentToDataProcessing !== undefined && { autoConsentToDataProcessing }),
+          ...(sourceAttributionAnswer !== undefined && { sourceAttributionAnswer }),
       } },
       { new: true, upsert: true }
     );

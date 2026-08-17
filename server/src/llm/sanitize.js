@@ -32,10 +32,46 @@ function stripNeverSend(obj) {
 function deriveIdentityFacts(profile) {
   const derived = [];
   if (profile?.fullName) derived.push({ id: 'identity.fullName', label: 'Full name', value: profile.fullName, approved: true });
+  // preferredName falls back to fullName's first token when unset (e.g.
+  // "Utkarsh Katiyar" -> "Utkarsh") rather than staying blank — a real
+  // incident: "Preferred Name" fields came back "left blank — no matching
+  // fact" even though the obvious, correct answer is just the candidate's
+  // first name. An explicit profile.preferredName always wins if set (some
+  // people go by something other than their first name).
+  const preferredName = profile?.preferredName || profile?.fullName?.trim().split(/\s+/)[0];
+  if (preferredName) derived.push({ id: 'identity.preferredName', label: 'Preferred name', value: preferredName, approved: true });
   if (profile?.phone)    derived.push({ id: 'identity.phone',    label: 'Phone',     value: profile.phone,    approved: true });
+  if (profile?.country)  derived.push({ id: 'identity.country',  label: 'Country',   value: profile.country,  approved: true });
   if (profile?.links?.linkedin)  derived.push({ id: 'identity.linkedin',  label: 'LinkedIn',  value: profile.links.linkedin,  approved: true });
   if (profile?.links?.github)    derived.push({ id: 'identity.github',    label: 'GitHub',    value: profile.links.github,    approved: true });
   if (profile?.links?.portfolio) derived.push({ id: 'identity.portfolio', label: 'Portfolio', value: profile.links.portfolio, approved: true });
+  // Still filled from a real, user-entered field — PipelineConfig's
+  // alwaysManualFields (work_authorization) forces MANUAL confidenceTier
+  // regardless of this, so it's still gated for human review before
+  // submission; this just means the draft answer itself isn't blank.
+  if (profile?.workAuthorization) derived.push({ id: 'identity.workAuthorization', label: 'Work authorization', value: profile.workAuthorization, approved: true });
+  // requiresVisaSponsorship is a real tri-state (true/false/unset) — only
+  // derive a fact when the user has actually stated it (!= null/undefined).
+  // Never defaulted to a fixed value; see candidateProfile.js's schema
+  // comment for why. Same MANUAL-tier gate as workAuthorization above.
+  if (profile?.requiresVisaSponsorship != null) {
+    derived.push({
+      id: 'identity.requiresVisaSponsorship',
+      label: 'Requires visa sponsorship',
+      value: profile.requiresVisaSponsorship ? 'Yes' : 'No',
+      approved: true,
+    });
+  }
+  // Distinct fact from requiresVisaSponsorship — see candidateProfile.js's
+  // schema comment for why these are never derived from one another.
+  if (profile?.currentlyEligibleToWork != null) {
+    derived.push({
+      id: 'identity.currentlyEligibleToWork',
+      label: 'Currently eligible to work',
+      value: profile.currentlyEligibleToWork ? 'Yes' : 'No',
+      approved: true,
+    });
+  }
   return derived;
 }
 

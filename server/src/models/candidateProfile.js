@@ -47,7 +47,9 @@ const candidateProfileSchema = new mongoose.Schema(
   {
     userId:           { type: mongoose.Schema.Types.ObjectId, ref: 'User', unique: true, required: true },
     fullName:         String,
+    preferredName:    String, // e.g. "Utkarsh" when fullName is "Utkarsh Katiyar" — falls back to fullName's first token if unset (see llm/sanitize.js)
     phone:            String,
+    country:          String, // country of residence — "Country" is a near-universal field on Greenhouse/Lever/Ashby forms, previously had no source at all
     currentCTC:       Number,
     expectedCTC:      Number,
     noticePeriodDays: Number,
@@ -61,6 +63,23 @@ const candidateProfileSchema = new mongoose.Schema(
       portfolio: String,
     },
     workAuthorization: String,
+    // Explicit, user-stated answer to "do you require visa sponsorship" —
+    // deliberately NOT a policy default/auto-answer. This is the candidate's
+    // own real fact, same trust model as workAuthorization; a wrong answer
+    // here is a real legal/practical problem if the user's actual situation
+    // changes and this goes stale, so it's never assumed or defaulted to a
+    // fixed value. Still forces MANUAL confidenceTier regardless (see
+    // agents/computeTier.js's SENSITIVE_LABEL_PATTERNS) — this only means
+    // the DRAFT answer is correct and consistent, a human still reviews it
+    // before every submission.
+    requiresVisaSponsorship: { type: Boolean, default: undefined },
+    // Distinct question from requiresVisaSponsorship above — "are you
+    // eligible to work in [country] as per this job post" and "do you
+    // require sponsorship" are two separate legal questions on many ATS
+    // forms (e.g. Bloomreach's Greenhouse form asks both), and a candidate
+    // could in principle answer them differently — never derived from one
+    // another. Same explicit-fact, never-a-blind-default treatment.
+    currentlyEligibleToWork: { type: Boolean, default: undefined },
     facts:             [factSchema],
   },
   { timestamps: true }

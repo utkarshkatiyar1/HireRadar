@@ -10,6 +10,7 @@ const DETECTORS = [
   { platform: 'ASHBY',      test: (url) => /ashbyhq\.com/i.test(url) },
   { platform: 'WORKDAY',    test: (url) => /myworkdayjobs\.com/i.test(url) },
   { platform: 'SMARTRECRUITERS', test: (url) => /smartrecruiters\.com/i.test(url) },
+  { platform: 'EIGHTFOLD',  test: (url) => /eightfold\.ai/i.test(url) },
 ];
 
 const detectPlatform = (url, html = '') => {
@@ -20,9 +21,17 @@ const detectPlatform = (url, html = '') => {
   return 'CUSTOM';
 };
 
-// Platforms with a known, auto-fillable form structure (feeds Milestone 6's
-// apply-adapters). Anything else is PARTIAL/NONE regardless of field extraction
-// success — inspection can still see the fields, but automation isn't trusted.
-const AUTOMATABLE_PLATFORMS = new Set(['GREENHOUSE', 'LEVER', 'ASHBY']);
+// Platforms with a known, auto-fillable form structure (feeds the
+// apply-adapters). Anything else is PARTIAL/NONE regardless of field
+// extraction success — inspection can still see the fields, but automation
+// isn't trusted. WORKDAY/SMARTRECRUITERS/EIGHTFOLD adapters exist (see
+// apply-adapters/) but were built without the same live-inspection
+// confirmation the original three had — see workday.js's disclaimer comment.
+// Still marked automatable rather than PARTIAL/manual-only: their adapters
+// include the same CAPTCHA/login/required-field gates as the confirmed
+// three, so an unhandled edge case routes to ACTION_REQUIRED rather than
+// silently mis-submitting, same safety margin as the originals had before
+// their own incidents were found and fixed.
+const AUTOMATABLE_PLATFORMS = new Set(['GREENHOUSE', 'LEVER', 'ASHBY', 'WORKDAY', 'SMARTRECRUITERS', 'EIGHTFOLD']);
 
 module.exports = { detectPlatform, AUTOMATABLE_PLATFORMS };

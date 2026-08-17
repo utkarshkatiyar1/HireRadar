@@ -4,6 +4,7 @@ const express = require('express');
 const cors    = require('cors');
 const cron    = require('node-cron');
 const { connect, Job, UserJobState } = require('./utils/db');
+const { scoreUnscoredJobMatches } = require('./utils/jobMatchBatch');
 const jobsRouter             = require('./routes/jobs');
 const authRouter             = require('./routes/auth');
 const adminRouter            = require('./routes/admin');
@@ -12,6 +13,9 @@ const profileCandidateRouter = require('./routes/profile-candidate');
 const resumesRouter          = require('./routes/resumes');
 const applicationsRouter     = require('./routes/applications');
 const scrape      = require('./index');
+
+const dns = require("node:dns");
+dns.setServers(["1.1.1.1", "8.8.8.8"]);
 
 // Render's free tier caps the whole workspace at 750 instance-hours/month,
 // shared across every service kept alive (UptimeRobot pings all 3 every 5
@@ -53,6 +57,14 @@ app.get('/health', (_req, res) => res.json({ ok: true }));
   cron.schedule('0 */2 * * *', async () => {
     console.log(`[CRON] ${new Date().toISOString()} — starting scrape`);
     await scrape();
+    console.log(`[CRON] ${new Date().toISOString()} — scoring job matches`);
+    const result = await scoreUnscoredJobMatches().catch(e => {
+      // Scoring failure shouldn't be treated as a cron failure — /jobs still
+      // works fine on the recency+keyword fallback for unscored jobs.
+      console.error('[CRON] job-match scoring failed', e);
+      return null;
+    });
+    if (result) console.log(`[CRON] job-match scoring: ${JSON.stringify(result)}`);
   });
 
   console.log('Cron scheduled — every 2 hours');

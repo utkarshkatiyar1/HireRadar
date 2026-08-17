@@ -8,7 +8,12 @@ const { runEvaluation, runPrepare, runPreparation } = require('../../agents/pipe
 //                       enqueued ONLY by POST /applications/:id/prepare)
 //   'prepare'        -> runPreparation (PREPARING..READY_FOR_APPROVAL),
 //                       enqueued by queue/processors/inspectionProcessor.js
-//                       once inspection completes
+//                       once inspection completes, OR by
+//                       POST /applications/:id/reprepare re-running
+//                       preparation on an already-drafted application
+//                       (skips re-inspecting the form, whose fields haven't
+//                       changed) — e.g. after fixing gaps in Candidate
+//                       Profile that caused blank answers the first time
 const RUNNERS = {
   prepareTrigger: runPrepare,
   prepare: runPreparation,

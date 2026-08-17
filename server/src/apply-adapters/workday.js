@@ -8,10 +8,20 @@ const { detectCaptcha } = require('../form-inspector/inspect');
 const { extractFields } = require('../form-inspector/extractFields');
 const { stealthContextOptions, LAUNCH_ARGS, applyStealth } = require('./stealth');
 
-// Lever adapter — same flow as greenhouse.js (fill -> screenshot -> dry-run
-// stop -> submit -> confirm), generic field-matching via shared.js since
-// Lever's form field naming varies more per-company than Greenhouse's.
-async function submitLever({ application, job, resumeVariant }) {
+// Workday adapter — NOT confirmed via the same live-inspection process that
+// greenhouse.js/lever.js/ashby.js went through (those three each have a
+// documented real incident that shaped their navigation logic). Built from
+// Workday's well-documented public structure instead: myworkdayjobs.com
+// postings almost always require an account (email verification or a
+// "Sign In"/"Create Account" gate) before the actual application wizard is
+// reachable, and the wizard itself is a genuinely multi-step flow (My
+// Information -> My Experience -> Application Questions -> Voluntary
+// Disclosures -> Review), unlike Greenhouse/Lever/Ashby's single-page forms.
+// Treat this adapter as higher-risk / needs-real-world-validation than the
+// other three — the login-wall detection below is deliberately conservative
+// (routes to ACTION_REQUIRED rather than guessing) precisely because this
+// hasn't been confirmed against a real Workday tenant yet.
+async function submitWorkday({ application, job, resumeVariant }) {
   const dryRun = process.env.APPLY_DRY_RUN !== 'false';
   const skipCheck = shouldSkipSubmission(application);
   if (skipCheck.skip) {
@@ -33,41 +43,59 @@ async function submitLever({ application, job, resumeVariant }) {
 
   try {
     const startUrl = application.sessionState?.currentUrl || job.url;
-    // domcontentloaded, not networkidle — many real job-board pages never
-    // reach true network idle (persistent analytics/polling), which turned
-    // a fully-loaded, usable page into a hard 30s timeout failure.
     await page.goto(startUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
-    await page.waitForTimeout(1000);
+    await page.waitForTimeout(1500);
 
-    // Lever postings often need an explicit "Apply for this job" click to
-    // reveal the form.
-    const applyButton = page.locator('a:has-text("Apply for this job"), a.postings-btn').first();
-    if (await applyButton.count() > 0) {
-      await applyButton.click().catch(() => {});
-      await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
+    // Workday almost universally requires "Apply" -> "Autofill with Resume"
+    // or a manual account before the real form appears — this click reveals
+    // the application entry point on the job detail page.
+    const applyButton = page.locator('button:has-text("Apply"), a:has-text("Apply")').first();
+    if (!application.sessionState?.currentUrl && await applyButton.count() > 0) {
+      await Promise.all([
+        page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {}),
+        applyButton.click().catch(() => {}),
+      ]);
+      await page.waitForTimeout(1500);
+    }
+
+    // Workday's account gate is a real, hard blocker — it is NOT a login
+    // wall in the same sense as a company-internal tool (this is Workday's
+    // OWN account system, required before the wizard is reachable at all,
+    // distinct from detectLoginWall's job-board-login check in
+    // form-inspector/inspect.js). Detected here via Workday's own
+    // "Sign In"/"Create Account" page markers rather than assuming
+    // formInspection.requiresLogin already caught it, since that check runs
+    // at inspect time and this page may have changed since.
+    const accountGateText = await page.locator('body').innerText().catch(() => '');
+    const needsAccount = /create account|sign in to workday|already have an account/i.test(accountGateText)
+      && await page.locator('input[type="password"]').count() > 0;
+    if (needsAccount) {
+      await saveSessionState(ctx, application._id.toString());
+      return {
+        outcome: 'ACTION_REQUIRED',
+        pendingQuestion: { question: 'This Workday posting requires signing in or creating a Workday account before applying — do this manually, then continue.', fieldKey: 'login' },
+        screenshotRef: await takeScreenshot(page, { applicationId: application._id, label: 'pre-submit' }),
+        fillResults: [],
+      };
     }
 
     const answersByKey = new Map(application.answers.map(a => [a.fieldKey, a]));
     const fillResults = [];
 
     await fillAllFields(page, application.formInspection?.fields || [], answersByKey, fillResults);
+    // Workday's wizard is multi-step by default (unlike Greenhouse/Lever/
+    // Ashby, where multi-step is the exception) — this is the adapter this
+    // logic matters most for.
     await advanceMultiStepForm(page, application, answersByKey, fillResults, extractFields);
 
     if (resumeVariant?.storageKey) {
-      // Match the resume's own field, not just the first file input on the
-      // page — see greenhouse.js's equivalent comment for why (some forms
-      // have a separate cover_letter file input too, and blind .first()
-      // risks uploading to the wrong slot or none at all).
       const resumeField = (application.formInspection?.fields || [])
         .find(f => f.fieldType === 'file' && /resume|cv/i.test(`${f.key} ${f.label}`));
       const resumeInput = resumeField
         ? page.locator(`[name="${resumeField.key}"], #${resumeField.key}`).first()
-        : page.locator('input[name="resume"], input[type="file"]').first();
+        : page.locator('input[type="file"]').first();
       if (await resumeInput.count() > 0) {
         const resumePath = require('path').join(__dirname, '..', '..', 'uploads', 'resumes', resumeVariant.storageKey);
-        // force: true — see greenhouse.js's equivalent comment: real file
-        // inputs are commonly hidden behind a styled button, and Playwright's
-        // default visibility check otherwise rejects a genuinely working input.
         await resumeInput.setInputFiles(resumePath, { force: true }).then(() => {
           fillResults.push({ fieldKey: 'resume', filled: true });
         }).catch(() => {
@@ -79,8 +107,6 @@ async function submitLever({ application, job, resumeVariant }) {
     const preSubmitUrl = page.url();
     const preSubmitScreenshotRef = await takeScreenshot(page, { applicationId: application._id, label: 'pre-submit' });
 
-    // Re-detected LIVE — see greenhouse.js's equivalent comment for why
-    // formInspection.captchaPresent can't be trusted here.
     const hasPasswordField = await page.locator('input[type="password"]').count() > 0;
     const hasCaptcha = await detectCaptcha(page);
     if (hasPasswordField || hasCaptcha) {
@@ -115,7 +141,12 @@ async function submitLever({ application, job, resumeVariant }) {
       return { outcome: 'DRY_RUN_COMPLETED', screenshotRef: preSubmitScreenshotRef, fillResults };
     }
 
-    const submitButton = page.locator('button[type="submit"], input[type="submit"]').first();
+    // Workday's final-step button is usually "Submit" specifically (its
+    // "Next"/"Continue" buttons on earlier steps are already consumed by
+    // advanceMultiStepForm above, which only advances — this locator
+    // intentionally excludes those to avoid re-triggering a step-advance
+    // here instead of the real, final submit).
+    const submitButton = page.locator('button:has-text("Submit"), button[type="submit"]').first();
     await markSubmitAttempted(application._id);
     await submitButton.click();
     await page.waitForLoadState('networkidle', { timeout: 30000 }).catch(() => {});
@@ -134,4 +165,4 @@ async function submitLever({ application, job, resumeVariant }) {
   }
 }
 
-module.exports = submitLever;
+module.exports = submitWorkday;

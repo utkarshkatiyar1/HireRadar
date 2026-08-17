@@ -79,4 +79,25 @@ async function generateStructured({ model, system, prompt, schema }) {
   }
 }
 
-module.exports = { generateStructured };
+// Returns a plain number[] embedding vector for a piece of text. Used for
+// resume-to-job-description similarity (agents/resumeRouting.js) as a cheap
+// deterministic-adjacent signal — no chat/JSON-schema machinery involved,
+// so this is deliberately separate from generateStructured.
+async function generateEmbedding({ model, text }) {
+  const ai = getClient();
+
+  let response;
+  try {
+    response = await ai.models.embedContent({ model, contents: text });
+  } catch (err) {
+    throw classifyError(err);
+  }
+
+  const values = response?.embeddings?.[0]?.values;
+  if (!Array.isArray(values) || !values.length) {
+    throw new LlmMalformedOutputError('Gemini returned an empty embedding');
+  }
+  return values;
+}
+
+module.exports = { generateStructured, generateEmbedding };

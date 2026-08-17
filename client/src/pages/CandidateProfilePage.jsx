@@ -120,10 +120,12 @@ function FactEditor({ facts, onChange }) {
 }
 
 const EMPTY = {
-  fullName: '', phone: '', currentCTC: '', expectedCTC: '', noticePeriodDays: '', totalExpYears: '',
+  fullName: '', preferredName: '', phone: '', country: '', currentCTC: '', expectedCTC: '', noticePeriodDays: '', totalExpYears: '',
   skills: [], projects: [], education: [], links: { github: '', linkedin: '', portfolio: '' },
-  workAuthorization: '', facts: [],
+  workAuthorization: '', requiresVisaSponsorship: null, currentlyEligibleToWork: null, facts: [],
 };
+
+const POLICY_EMPTY = { autoConsentToDataProcessing: false, sourceAttributionAnswer: '' };
 
 export default function CandidateProfilePage() {
   const [profile, setProfile] = useState(null);
@@ -131,6 +133,17 @@ export default function CandidateProfilePage() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState(null);
+
+  // Separate load/save from the CandidateProfile fields above — this is
+  // ApplicationPolicy (routes/profile-candidate.js's /profile/policy),
+  // which previously had zero client UI at all despite the backend route
+  // existing, same gap as the resume-upload page. Kept as its own
+  // independent save flow rather than merged into the profile save above,
+  // since they're genuinely different documents server-side.
+  const [policy, setPolicy] = useState(null);
+  const [savedPolicy, setSavedPolicy] = useState(null);
+  const [policySaving, setPolicySaving] = useState(false);
+  const [policySaved, setPolicySaved] = useState(false);
 
   useEffect(() => {
     authFetch('/profile/candidate')
@@ -141,7 +154,37 @@ export default function CandidateProfilePage() {
         setSavedProfile(merged);
       })
       .catch(() => { setProfile({ ...EMPTY }); setSavedProfile({ ...EMPTY }); });
+
+    authFetch('/profile/policy')
+      .then(r => r.json())
+      .then(data => {
+        const merged = { ...POLICY_EMPTY, ...data };
+        setPolicy(merged);
+        setSavedPolicy(merged);
+      })
+      .catch(() => { setPolicy({ ...POLICY_EMPTY }); setSavedPolicy({ ...POLICY_EMPTY }); });
   }, []);
+
+  const isPolicyDirty = policy && savedPolicy && JSON.stringify(policy) !== JSON.stringify(savedPolicy);
+  const setPolicyField = (key) => (val) => setPolicy(p => ({ ...p, [key]: val }));
+
+  const savePolicy = async () => {
+    setPolicySaving(true);
+    try {
+      const res = await authFetch('/profile/policy', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(policy),
+      });
+      if (res.ok) {
+        setSavedPolicy(policy);
+        setPolicySaved(true);
+        setTimeout(() => setPolicySaved(false), 3000);
+      }
+    } finally {
+      setPolicySaving(false);
+    }
+  };
 
   const isDirty = profile && savedProfile && JSON.stringify(profile) !== JSON.stringify(savedProfile);
 
@@ -195,8 +238,14 @@ export default function CandidateProfilePage() {
             <label className="cpf-field">Full name
               <input className="tag-input" value={profile.fullName} onChange={e => set('fullName')(e.target.value)} />
             </label>
+            <label className="cpf-field">Preferred name
+              <input className="tag-input" value={profile.preferredName} onChange={e => set('preferredName')(e.target.value)} placeholder="Defaults to your first name if left blank" />
+            </label>
             <label className="cpf-field">Phone
               <input className="tag-input" value={profile.phone} onChange={e => set('phone')(e.target.value)} />
+            </label>
+            <label className="cpf-field">Country
+              <input className="tag-input" value={profile.country} onChange={e => set('country')(e.target.value)} placeholder="e.g. India" />
             </label>
             <label className="cpf-field">Current CTC
               <input className="tag-input" type="number" value={profile.currentCTC} onChange={e => set('currentCTC')(Number(e.target.value))} />
@@ -243,6 +292,38 @@ export default function CandidateProfilePage() {
             </div>
           </div>
           <textarea className="cpf-textarea" value={profile.workAuthorization} onChange={e => set('workAuthorization')(e.target.value)} placeholder="e.g. Indian citizen, no US work authorization, would require sponsorship" />
+
+          <label className="cpf-field" style={{ marginTop: 12 }}>
+            Do you require visa sponsorship?
+            <select
+              className="tag-input"
+              value={profile.requiresVisaSponsorship === null ? '' : String(profile.requiresVisaSponsorship)}
+              onChange={e => set('requiresVisaSponsorship')(e.target.value === '' ? null : e.target.value === 'true')}
+            >
+              <option value="">Not set — these questions will need manual review each time</option>
+              <option value="false">No</option>
+              <option value="true">Yes</option>
+            </select>
+          </label>
+          <p className="profile-section-desc" style={{ marginTop: 4 }}>
+            Applied to "Do you require visa sponsorship?" style questions. This is still forced into manual review before every submission — setting it just means the drafted answer is correct instead of blank.
+          </p>
+
+          <label className="cpf-field" style={{ marginTop: 12 }}>
+            Are you currently eligible to work in the countries where jobs are posted?
+            <select
+              className="tag-input"
+              value={profile.currentlyEligibleToWork === null ? '' : String(profile.currentlyEligibleToWork)}
+              onChange={e => set('currentlyEligibleToWork')(e.target.value === '' ? null : e.target.value === 'true')}
+            >
+              <option value="">Not set — these questions will need manual review each time</option>
+              <option value="true">Yes</option>
+              <option value="false">No</option>
+            </select>
+          </label>
+          <p className="profile-section-desc" style={{ marginTop: 4 }}>
+            A separate question from visa sponsorship above — some forms ask both. Also still forced into manual review every time.
+          </p>
         </div>
 
         <div className="profile-section">
@@ -282,6 +363,47 @@ export default function CandidateProfilePage() {
           </div>
           <FactEditor facts={profile.facts} onChange={set('facts')} />
         </div>
+
+        {policy && (
+          <div className="profile-section">
+            <div className="profile-section-top">
+              <span className="profile-section-icon">📝</span>
+              <div className="profile-section-meta">
+                <div className="profile-section-title">Application Answer Defaults</div>
+                <div className="profile-section-desc">
+                  Policy-level answers for generic questions that aren't candidate facts — separate save, applies immediately to future preparations.
+                </div>
+              </div>
+            </div>
+
+            <label className="cpf-field" style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+              <input
+                type="checkbox"
+                checked={policy.autoConsentToDataProcessing}
+                onChange={e => setPolicyField('autoConsentToDataProcessing')(e.target.checked)}
+              />
+              Auto-check data-processing/EEO-survey consent checkboxes ("By checking this box, I consent to...")
+            </label>
+
+            <label className="cpf-field">
+              Where did you hear about us? (generic answer)
+              <input
+                className="tag-input"
+                value={policy.sourceAttributionAnswer}
+                onChange={e => setPolicyField('sourceAttributionAnswer')(e.target.value)}
+                placeholder="e.g. Career Website or LinkedIn — matched against the form's actual dropdown options when it is one"
+              />
+            </label>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 12 }}>
+              <button className={`profile-save-btn${policySaved ? ' saved' : ''}`} onClick={savePolicy} disabled={policySaving || !isPolicyDirty}>
+                {policySaving ? 'Saving…' : 'Save answer defaults'}
+              </button>
+              {isPolicyDirty && <span className="profile-unsaved">Unsaved changes</span>}
+              {!isPolicyDirty && policySaved && <span className="profile-saved-note">✓ Saved</span>}
+            </div>
+          </div>
+        )}
 
         <div className={`profile-save-bar${isDirty ? ' dirty' : ''}`}>
           {error && <span className="profile-error">{error}</span>}

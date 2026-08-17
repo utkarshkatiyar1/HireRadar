@@ -381,7 +381,24 @@ router.post('/applications/:id/retry', requireAdmin, async (req, res) => {
     const application = await Application.findById(req.params.id);
     if (!application) return res.status(404).json({ error: 'Not found' });
 
-    if (application.status === 'REJECTED' || application.status === 'FAILED') {
+    if (application.status === 'APPLYING') {
+      // Genuinely stuck APPLYING (e.g. a worker crash/restart mid-job lost
+      // track of it — confirmed via /admin/queues showing 0 active/waiting
+      // apply jobs while the application itself never transitioned out) has
+      // no other recovery path: it's already in the right state, just
+      // re-enqueue the submit job. Same trust-the-caller stance as
+      // SUBMISSION_UNCONFIRMED below — if the original attempt actually
+      // succeeded silently, this risks a double-submit; a human should
+      // check the target site/email first when in doubt.
+      await getApplyQueue().add('submit', { applicationId: application._id.toString(), retried: true });
+    } else if (application.status === 'SUBMISSION_UNCONFIRMED') {
+      // Only ever retry this after a human has manually confirmed the
+      // original attempt did NOT actually submit — this route trusts the
+      // caller on that, it can't verify it itself.
+      transition(application, 'APPLYING', 'admin retry — confirmed original attempt did not submit');
+      await application.save();
+      await getApplyQueue().add('submit', { applicationId: application._id.toString(), retried: true });
+    } else if (application.status === 'REJECTED' || application.status === 'FAILED') {
       const wasApplying = application.statusHistory.some(h => h.status === 'APPLYING')
         && application.statusHistory[application.statusHistory.length - 1]?.status !== 'EVALUATING';
       transition(application, 'EVALUATING', 'admin retry');

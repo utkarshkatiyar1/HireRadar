@@ -42,7 +42,7 @@ const BUCKETS = {
 };
 
 const TIER_COLOR = {
-  AUTO: '#22c55e', QUICK_APPROVE: '#2dd4bf', DRAFT_ONLY: '#f97316', MANUAL: '#f87171',
+  AUTO: '#22c55e', QUICK_APPROVE: '#2dd4bf', DRAFT_ONLY: '#f97316', MANUAL: '#f87171', REVIEWED_MANUAL: '#a78bfa',
 };
 
 const STATUS_LABEL = {
@@ -81,10 +81,30 @@ const rowTimestamp = (app) => {
 // ACTION_REQUIRED deliberately has no entry: resolving it needs real input
 // (free-text answer, or "I solved the CAPTCHA" confirmation via
 // ActionRequiredResolver) that can't be reduced to a single click.
+//
+// READY_FOR_APPROVAL/DRY_RUN_COMPLETED deliberately have NO one-click submit
+// action here anymore — approving is the one decision in this whole workflow
+// that must involve actually looking at the drafted answers first (which
+// resume was picked, what got filled in, confidence per field, any
+// low-confidence/sensitive fields forcing MANUAL tier). A list-row one-click
+// button skipped that entirely. These statuses fall through to the "Review"
+// link below instead.
 const ROW_ACTIONS = {
   READY_FOR_PREPARATION: { label: 'Prepare', path: (id) => `/applications/${id}/prepare`, body: null },
-  READY_FOR_APPROVAL:    { label: 'Approve & Submit', path: (id) => `/applications/${id}/approve`, body: { submit: true } },
-  DRY_RUN_COMPLETED:     { label: 'Approve & Submit (Live)', path: (id) => `/applications/${id}/approve`, body: { submit: true } },
+};
+
+const REVIEW_STATUSES = new Set(['READY_FOR_APPROVAL', 'DRY_RUN_COMPLETED']);
+
+// Bulk selection is only offered for these two statuses, and deliberately
+// NOT for READY_FOR_APPROVAL/DRY_RUN_COMPLETED — those require opening each
+// application and actually looking at its drafted answers first (see
+// REVIEW_STATUSES/ROW_ACTIONS comment above). APPROVED apps were already
+// individually reviewed at the approve step; bulk-submit here only batches
+// the mechanical "now actually submit it" call, same reasoning as
+// routes/applications.js's bulk-submit endpoint.
+const BULK_CONFIGS = {
+  READY_FOR_PREPARATION: { endpoint: 'bulk-prepare', max: 15, label: 'ready to prepare', actionLabel: 'Prepare Selected' },
+  APPROVED:               { endpoint: 'bulk-submit',  max: 15, label: 'approved, ready to submit', actionLabel: 'Submit Selected' },
 };
 
 export default function ApprovalQueuePage() {
@@ -92,13 +112,70 @@ export default function ApprovalQueuePage() {
   const [page, setPage] = useState(1);
   const [skipping, setSkipping] = useState(() => new Set());
   const [acting, setActing] = useState(() => new Set());
+  const [selected, setSelected] = useState(() => new Set());
+  const [bulkRunning, setBulkRunning] = useState(false);
+  const [bulkError, setBulkError] = useState(null);
   const statusParam = BUCKETS[bucket].statuses.join(',');
   const sort = BUCKETS[bucket].sort || 'recent';
   const { applications, total, loading, err, refetch } = useApplications({ status: statusParam, sort, page, limit: PAGE_SIZE });
 
+  // Only one bulkable status can be active per bucket in practice (Needs
+  // Action -> READY_FOR_PREPARATION, In Progress -> APPROVED) — if a bucket
+  // ever mixed both, bulkStatus picks whichever has any rows present.
+  const bulkStatus = Object.keys(BULK_CONFIGS).find(status =>
+    BUCKETS[bucket].statuses.includes(status) && applications.some(a => a.status === status)
+  );
+  const bulkConfig = bulkStatus ? BULK_CONFIGS[bulkStatus] : null;
+  const bulkableOnPage = bulkStatus ? applications.filter(a => a.status === bulkStatus) : [];
+
   const selectBucket = (key) => {
     setBucket(key);
     setPage(1);
+    setSelected(new Set());
+    setBulkError(null);
+  };
+
+  const toggleSelected = (id) => {
+    if (!bulkConfig) return;
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else if (next.size < bulkConfig.max) next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAllBulkable = () => {
+    if (!bulkConfig) return;
+    setSelected(prev =>
+      prev.size === Math.min(bulkableOnPage.length, bulkConfig.max)
+        ? new Set()
+        : new Set(bulkableOnPage.slice(0, bulkConfig.max).map(a => a._id))
+    );
+  };
+
+  const handleBulkAction = async () => {
+    if (!selected.size || bulkRunning || !bulkConfig) return;
+    setBulkRunning(true);
+    setBulkError(null);
+    try {
+      const res = await authFetch(`/applications/${bulkConfig.endpoint}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ applicationIds: Array.from(selected) }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Bulk action failed');
+      if (data.blockedManual?.length) {
+        setBulkError(`${data.blockedManual.length} skipped — requires manual review (MANUAL confidence tier) before it can be submitted.`);
+      }
+      setSelected(new Set());
+      refetch();
+    } catch (e) {
+      setBulkError(e.message);
+    } finally {
+      setBulkRunning(false);
+    }
   };
 
   const handleSkip = async (e, id) => {
@@ -181,6 +258,27 @@ export default function ApprovalQueuePage() {
         </div>
       )}
 
+      {bulkConfig && bulkableOnPage.length > 0 && (
+        <div className="aq-bulk-bar">
+          <label className="aq-bulk-selectall">
+            <input
+              type="checkbox"
+              checked={selected.size > 0 && selected.size === Math.min(bulkableOnPage.length, bulkConfig.max)}
+              onChange={toggleSelectAllBulkable}
+            />
+            Select all {bulkConfig.label} (max {bulkConfig.max} per batch)
+          </label>
+          <button
+            className="btn-apply"
+            disabled={!selected.size || bulkRunning}
+            onClick={handleBulkAction}
+          >
+            {bulkRunning ? 'Starting…' : `${bulkConfig.actionLabel} (${selected.size})`}
+          </button>
+          {bulkError && <span className="msg error">{bulkError}</span>}
+        </div>
+      )}
+
       {!loading && !err && applications.length === 0 && (
         <div className="empty">
           <div className="empty-icon">📋</div>
@@ -197,6 +295,16 @@ export default function ApprovalQueuePage() {
         <div className="aq-list">
           {applications.map(app => (
             <Link key={app._id} to={`/applications/${app._id}`} className="aq-row">
+              {bulkConfig && app.status === bulkStatus && (
+                <input
+                  type="checkbox"
+                  className="aq-row-checkbox"
+                  checked={selected.has(app._id)}
+                  disabled={!selected.has(app._id) && selected.size >= bulkConfig.max}
+                  onClick={(e) => e.stopPropagation()}
+                  onChange={(e) => { e.stopPropagation(); toggleSelected(app._id); }}
+                />
+              )}
               <div className="aq-row-main">
                 <div className="aq-row-title">{app.job?.title}</div>
                 <div className="aq-row-sub">{app.job?.company} · {app.job?.location}</div>
@@ -229,7 +337,7 @@ export default function ApprovalQueuePage() {
                   >
                     Apply manually ↗
                   </a>
-                ) : ROW_ACTIONS[app.status] && (
+                ) : ROW_ACTIONS[app.status] ? (
                   <button
                     className="btn-apply aq-row-action-btn"
                     onClick={(e) => handleRowAction(e, app._id, ROW_ACTIONS[app.status])}
@@ -237,6 +345,10 @@ export default function ApprovalQueuePage() {
                   >
                     {acting.has(app._id) ? '…' : ROW_ACTIONS[app.status].label}
                   </button>
+                ) : REVIEW_STATUSES.has(app.status) && (
+                  <Link to={`/applications/${app._id}`} className="btn-apply aq-row-action-btn" onClick={(e) => e.stopPropagation()}>
+                    Review →
+                  </Link>
                 )}
                 {app.status === 'ACTION_REQUIRED' && (
                   <Link to={`/applications/${app._id}`} className="btn-apply aq-row-action-btn" onClick={(e) => e.stopPropagation()}>

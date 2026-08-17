@@ -15,13 +15,31 @@ const ALLOWED_TRANSITIONS = {
   READY_FOR_PREPARATION:  ['INSPECTING_FORM', 'SKIPPED', 'CANCELLED'],
   INSPECTING_FORM:        ['PREPARING', 'READY_FOR_APPROVAL', 'EXPIRED', 'FAILED'],
   PREPARING:              ['READY_FOR_APPROVAL', 'FAILED'],
-  READY_FOR_APPROVAL:     ['APPROVED', 'SKIPPED'],
+  // PREPARING re-entry: lets a user re-run resume routing/answer drafting/
+  // verification on an already-drafted application (e.g. after fixing gaps
+  // in their Candidate Profile) without needing an admin retry — see
+  // POST /applications/:id/reprepare.
+  // INSPECTING_FORM re-entry: lets a user force a fresh form-inspection on
+  // an already-drafted application — see POST /applications/:id/reinspect.
+  // Distinct from the PREPARING re-entry (reprepare) above: reprepare
+  // reuses the EXISTING formInspection.fields snapshot (fine when only the
+  // candidate's profile/facts changed), which does nothing for a bad field
+  // baked into that snapshot itself (e.g. a site-search widget or CAPTCHA
+  // response field mis-extracted as a real question — see form-inspector/
+  // extractFields.js's incident comments). Only re-inspection re-runs the
+  // actual DOM extraction and can drop a field like that.
+  READY_FOR_APPROVAL:     ['APPROVED', 'SKIPPED', 'PREPARING', 'INSPECTING_FORM'],
   APPROVED:               ['APPLYING', 'CANCELLED'],
   APPLYING:               ['SUBMITTED', 'DRY_RUN_COMPLETED', 'SUBMISSION_UNCONFIRMED', 'ACTION_REQUIRED', 'SUBMISSION_BLOCKED', 'FAILED'],
   ACTION_REQUIRED:        ['APPLYING', 'SKIPPED', 'CANCELLED'], // resume re-enqueues back into APPLYING
-  DRY_RUN_COMPLETED:      ['APPROVED'], // re-approve to actually submit once dry-run is validated
+  DRY_RUN_COMPLETED:      ['APPROVED', 'INSPECTING_FORM'], // re-approve to actually submit once dry-run is validated; INSPECTING_FORM — see reinspect above
   SUBMITTED:              [], // terminal
-  SUBMISSION_UNCONFIRMED: [], // terminal — never auto-retried, must be manually reconciled
+  // Admin-only re-entry (POST /admin/applications/:id/retry) — still never
+  // auto-retried by the pipeline itself. Exists for the case where the
+  // unconfirmed outcome is traceable to a real bug (e.g. the resume-attach
+  // fix in apply-adapters/*.js) that's since been fixed, and a human has
+  // manually confirmed the original attempt did NOT actually submit.
+  SUBMISSION_UNCONFIRMED: ['APPLYING'],
   SUBMISSION_BLOCKED:     [], // terminal
   CANCELLED:              [], // terminal
   EXPIRED:                [], // terminal

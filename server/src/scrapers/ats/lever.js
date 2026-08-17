@@ -16,12 +16,14 @@ module.exports = async (src) => {
   );
 
   return (Array.isArray(data) ? data : []).map(j => normalize({
-    title:      j.text ?? '',
-    company:    src.company,
-    location:   j.categories?.location ?? '',
-    exp:        j.categories?.commitment ?? '',
-    department: j.categories?.team ?? '',
-    url:        j.hostedUrl ?? j.applyUrl ?? '',
-    date:       new Date(j.createdAt ?? Date.now()),
+    title:       j.text ?? '',
+    company:     src.company,
+    location:    j.categories?.location ?? '',
+    exp:         j.categories?.commitment ?? '',
+    department:  j.categories?.team ?? '',
+    url:         j.hostedUrl ?? j.applyUrl ?? '',
+    date:        new Date(j.createdAt ?? Date.now()),
+    // descriptionPlain is already plain text — no HTML stripping needed.
+    description: j.descriptionPlain ?? '',
   }));
 };

@@ -4,6 +4,42 @@ const ApplicationPolicy = require('../models/applicationPolicy');
 const { scoreJob, DEFAULTS } = require('../utils/filter');
 const { getPipelineQueue } = require('../queue/queues');
 
+// Job.url has a unique index, which only dedupes the SAME url being
+// scraped twice — it does nothing when the identical real-world posting is
+// discovered via two different urls (e.g. a company's own careers page vs.
+// its Greenhouse board mirror for the same role), which produces two
+// separate Job documents and, without this, two separate Applications for
+// what is really one job at one employer. Normalizing company+title+
+// location and checking for an existing recent match is a soft signal, not
+// a hard block: two DIFFERENT roles at the same company with similar
+// titles/locations (extremely common — "Software Engineer" at the same
+// company posted twice for different teams) would produce false positives
+// if this silently skipped creation. Instead it's surfaced via
+// possibleDuplicateOf on the Application for a human to see and decide,
+// never used to auto-skip.
+const normalize = (s) => (s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+const DUPLICATE_WINDOW_DAYS = 30;
+
+async function findPossibleDuplicateJobId(job, userId) {
+  const windowStart = new Date(Date.now() - DUPLICATE_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+  const candidates = await Job.find({
+    _id: { $ne: job._id },
+    company: job.company,
+    date: { $gte: windowStart },
+  }, { _id: 1, title: 1, location: 1 }).lean();
+
+  const targetTitle = normalize(job.title);
+  const targetLocation = normalize(job.location);
+  const match = candidates.find(c => normalize(c.title) === targetTitle && normalize(c.location) === targetLocation);
+  if (!match) return null;
+
+  // Only flag if the candidate has (or will have) an Application against
+  // the OTHER Job doc too — a duplicate Job with no Application on it isn't
+  // actionable for the user, just noise.
+  const existingApp = await Application.findOne({ userId, jobId: match._id }, { _id: 1 }).lean();
+  return existingApp ? match._id : null;
+}
+
 // Event-driven Application creation — called after scrape() completes, NOT
 // from a GET request. A GET must never create records/enqueue work, since
 // that breaks under polling, page refresh, multiple tabs, or monitoring
@@ -53,12 +89,17 @@ async function discoverApplicationsForUser(userId, { sinceJobIds } = {}) {
 
   if (!candidates.length) return 0;
 
+  const possibleDuplicates = await Promise.all(
+    candidates.map(job => findPossibleDuplicateJobId(job, userId))
+  );
+
   const docs = await Application.insertMany(
-    candidates.map(job => ({
+    candidates.map((job, i) => ({
       userId,
       jobId: job._id,
       status: 'DISCOVERED',
       statusHistory: [{ status: 'DISCOVERED', at: new Date(), note: 'created by discovery' }],
+      possibleDuplicateOf: possibleDuplicates[i] || undefined,
     })),
     { ordered: false }
   );

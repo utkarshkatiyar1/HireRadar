@@ -14,7 +14,12 @@ function runDeterministicVerification(answer, profile) {
     return { decided: true, flag: 'ok', note: 'no value drafted — nothing to verify' };
   }
 
-  if (!answer.factIds || answer.factIds.length === 0) {
+  // source: 'manual' (also used for consent-checkbox/policy-driven answers —
+  // see answerAgent.js's CONSENT_CHECKBOX_TEST) is an explicit human/policy
+  // decision, not a claim about the candidate that needs grounding in a
+  // fact. Flagging it 'unsupported' for having no factIds would be a false
+  // positive on the one answer type that was never meant to cite a fact.
+  if (answer.source !== 'manual' && (!answer.factIds || answer.factIds.length === 0)) {
     return { decided: true, flag: 'unsupported', note: 'answer has a value but no factIds — cannot ground it' };
   }
 
