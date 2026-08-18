@@ -43,7 +43,13 @@ const ALLOWED_TRANSITIONS = {
   SUBMISSION_BLOCKED:     [], // terminal
   CANCELLED:              [], // terminal
   EXPIRED:                [], // terminal
-  FAILED:                 ['EVALUATING', 'APPLYING'], // admin retry route re-enters here
+  // admin retry route (POST /admin/applications/:id/retry) re-enters here —
+  // which target depends on which stage failed: EVALUATING for an
+  // eligibility/fit-scoring failure, READY_FOR_PREPARATION to restart the
+  // whole prepare flow (inspection+drafting) from scratch for an
+  // INSPECTING_FORM/PREPARING failure (safe — runPreparation never persists
+  // partial progress, see agents/pipeline.js), APPLYING to re-enqueue submission.
+  FAILED:                 ['EVALUATING', 'READY_FOR_PREPARATION', 'APPLYING'],
 };
 
 class InvalidTransitionError extends Error {

@@ -7,6 +7,7 @@ const { getConnection } = require('../queue/connection');
 const applyProcessor      = require('../queue/processors/applyProcessor');
 const inspectionProcessor = require('../queue/processors/inspectionProcessor');
 const { startHealthServer } = require('./healthServer');
+const { markStuckFailedOnFinalAttempt } = require('../queue/stuckRecovery');
 
 const APPLY_CONCURRENCY      = Number(process.env.APPLY_CONCURRENCY) || 1;
 const INSPECTION_CONCURRENCY = Number(process.env.INSPECTION_CONCURRENCY) || 2;
@@ -44,6 +45,7 @@ async function start() {
     });
     worker.on('failed', (job, err) => {
       console.error(`[apply-worker:${name}] job ${job?.id} failed:`, err.message);
+      markStuckFailedOnFinalAttempt(job, err);
     });
     worker.on('error', (err) => {
       console.error(`[apply-worker:${name}] worker error:`, err.message);

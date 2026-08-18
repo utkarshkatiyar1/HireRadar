@@ -1,25 +1,31 @@
-const { getProvider } = require('./client');
+const { getEmbeddingProvider } = require('./client');
 const { assertWithinDailyLimit, recordUsage } = require('./usageLimiter');
 
-// Dedicated embedding model — separate from modelRouter.js's fast/quality
-// chat tiers, since embeddings are a different Gemini API surface
-// (ai.models.embedContent, not generateContent) with their own model name.
-// NOTE: 'text-embedding-004' (the original default here) 404s against this
-// API version/key — verified via ListModels that only gemini-embedding-001
-// (stable) and gemini-embedding-2/-preview are available. Every embedding
-// call made before this fix silently failed and fell back to keyword-only
-// scoring (LlmProviderError is caught the same as a quota error by callers),
-// which is why /jobs matchScores never actually reflected semantic
-// similarity despite the feature being "wired up."
-const EMBEDDING_MODEL = process.env.LLM_EMBEDDING_MODEL || 'gemini-embedding-001';
+// Dedicated embedding model — independent of modelRouter.js's fast/quality
+// chat tiers AND of whichever provider LLM_PROVIDER picks for chat, since
+// LLM_EMBEDDING_PROVIDER can point embeddings at an entirely different
+// provider (see client.js's getEmbeddingProvider). Defaults to Voyage's
+// voyage-3-lite now that embeddings run through Voyage instead of Gemini —
+// generous free-tier token budget instead of Gemini's shared, easily
+// exhausted daily request quota (see usageLimiter.js).
+//
+// NOTE: while embeddings still ran through Gemini, 'text-embedding-004' (the
+// original default here) 404'd against that API version/key — only
+// gemini-embedding-001 (stable) and gemini-embedding-2/-preview worked. Every
+// embedding call made before that fix silently failed and fell back to
+// keyword-only scoring (LlmProviderError is caught the same as a quota error
+// by callers), which is why /jobs matchScores never actually reflected
+// semantic similarity despite the feature being "wired up."
+const EMBEDDING_MODEL = process.env.LLM_EMBEDDING_MODEL || 'voyage-3-lite';
 
 // The single entry point for embedding generation — mirrors callStructured.js's
 // role for chat calls (provider resolution, self-imposed daily-limit
-// enforcement, usage logging), so embedding calls count against the same
-// LLM_DAILY_REQUEST_LIMIT and show up in the same usage accounting rather
-// than being an invisible side channel.
+// enforcement, usage logging). Usage is tracked per-provider (see
+// usageLimiter.js), so Voyage embedding calls no longer contend with
+// Gemini's LLM_DAILY_REQUEST_LIMIT the way they did when both ran through
+// the same provider.
 async function embedText(text) {
-  const { name: providerName, generateEmbedding } = getProvider();
+  const { name: providerName, generateEmbedding } = getEmbeddingProvider();
   await assertWithinDailyLimit(providerName);
 
   try {

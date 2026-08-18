@@ -6,11 +6,12 @@ const { computeJobMatchScore } = require('./jobMatch');
 // jobs that route will never return.
 const RECENCY_WINDOW_MS = 15 * 24 * 60 * 60 * 1000;
 
-// Caps how many (user, job) pairs get scored per cron run, so a burst of new
-// jobs/users can't turn one cron tick into an unbounded number of embedding
-// calls against the daily LLM request limit.
-const MAX_PAIRS_PER_RUN = 500;
-
+// No per-run pair cap — LLM_DAILY_REQUEST_LIMIT (see usageLimiter.js) is the
+// real backstop against burning the embedding quota; computeJobMatchScore
+// already falls back to keyword-only scoring the moment that limit is hit,
+// so an unbounded loop here just means keyword scores fill in for free
+// instead of a pair sitting unscored until a future run.
+//
 // Scores unscored (user, job) pairs for recent jobs — called from the cron
 // schedule after each scrape, so newly-discovered jobs get a matchScore
 // before the next time a user loads /jobs. Idempotent: only pairs with no
@@ -24,8 +25,6 @@ async function scoreUnscoredJobMatches() {
   let scored = 0, skipped = 0, errors = 0;
 
   for (const user of users) {
-    if (scored + skipped + errors >= MAX_PAIRS_PER_RUN) break;
-
     const profile = await CandidateProfile.findOne({ userId: user._id }).lean();
     if (!profile) { skipped++; continue; } // no profile yet — nothing to score against
 
@@ -34,11 +33,10 @@ async function scoreUnscoredJobMatches() {
       { jobId: 1 }
     ).lean().then(rows => rows.map(r => r.jobId));
 
-    const remainingBudget = MAX_PAIRS_PER_RUN - (scored + skipped + errors);
     const jobs = await Job.find({
       date: { $gte: cutoff },
       _id: { $nin: scoredJobIds },
-    }).limit(remainingBudget).lean();
+    }).lean();
 
     for (const job of jobs) {
       try {
@@ -56,7 +54,6 @@ async function scoreUnscoredJobMatches() {
         console.error(`[jobMatchBatch] failed to score job ${job._id} for user ${user._id}:`, err.message);
         errors++;
       }
-      if (scored + skipped + errors >= MAX_PAIRS_PER_RUN) break;
     }
   }
 

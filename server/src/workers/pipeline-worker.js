@@ -6,6 +6,7 @@ const { connect } = require('../utils/db');
 const { getConnection } = require('../queue/connection');
 const pipelineProcessor = require('../queue/processors/pipelineProcessor');
 const { startHealthServer } = require('./healthServer');
+const { markStuckFailedOnFinalAttempt } = require('../queue/stuckRecovery');
 
 const CONCURRENCY = Number(process.env.PIPELINE_CONCURRENCY) || 3;
 
@@ -35,6 +36,7 @@ async function start() {
   });
   worker.on('failed', (job, err) => {
     console.error(`[pipeline-worker] job ${job?.id} failed:`, err.message);
+    markStuckFailedOnFinalAttempt(job, err);
   });
   worker.on('error', (err) => {
     console.error('[pipeline-worker] worker error:', err.message);

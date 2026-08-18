@@ -40,7 +40,14 @@ const getPipelineConfig = () =>
 async function runEvaluation(applicationId) {
   const application = await Application.findById(applicationId);
   if (!application) throw new Error(`Application ${applicationId} not found`);
-  if (application.status !== 'DISCOVERED') {
+  // Accepts DISCOVERED (first attempt) AND EVALUATING (a BullMQ retry after
+  // eligibility()/fitScoring() threw below) — eligibility/fitScoring don't
+  // persist anything themselves, so re-running them on retry is safe. Before
+  // this, only DISCOVERED was accepted: the transition+save right below ran
+  // on attempt 1, so by attempt 2 the guard saw EVALUATING and returned
+  // early without error — a "successful" no-op that silently stranded the
+  // application in EVALUATING forever instead of actually retrying.
+  if (!['DISCOVERED', 'EVALUATING'].includes(application.status)) {
     return application; // already past this stage — avoid double-processing
   }
 
@@ -53,8 +60,10 @@ async function runEvaluation(applicationId) {
 
   application.discoverySourceType = job.sourceType || job.ats || 'UNKNOWN';
 
-  transition(application, 'EVALUATING', 'pipeline started');
-  await application.save();
+  if (application.status === 'DISCOVERED') {
+    transition(application, 'EVALUATING', 'pipeline started');
+    await application.save();
+  }
 
   const eligResult = await eligibility(application, job, profile, policy);
   application.eligibility = {

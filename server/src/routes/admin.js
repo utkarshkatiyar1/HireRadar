@@ -8,6 +8,8 @@ const { DEFAULTS } = require('../config/sources');
 const PipelineConfig = require('../models/pipelineConfig');
 const { Application } = require('../models/application');
 const { transition, InvalidTransitionError } = require('../utils/applicationState');
+const { retryFailedApplication } = require('../utils/retryFailedApplication');
+const { IN_FLIGHT_STATUSES } = require('../queue/stuckRecovery');
 const { getPipelineQueue, getApplyQueue } = require('../queue/queues');
 
 let scrapeRunning = false;
@@ -115,7 +117,40 @@ router.post('/applications/requeue-stuck', requireAdmin, async (req, res) => {
       name: 'evaluate',
       data: { applicationId: a._id.toString() },
     })));
-    res.json({ requeued: stuck.length });
+
+    // Also sweep in-flight applications (EVALUATING/INSPECTING_FORM/
+    // PREPARING/APPLYING) that have sat past staleTargetMinutes with no
+    // worker having moved them — covers the same class of gap as the
+    // DISCOVERED case above (a job that should exist never got created, or
+    // died before workers/stuckRecovery.js existed to catch it), just for
+    // the in-flight statuses instead of the pre-queue one. Each is marked
+    // FAILED then immediately resumed at the right stage via
+    // retryFailedApplication, same as a human clicking admin retry — this
+    // route is already an explicit admin action, so auto-resuming here
+    // (unlike the passive worker-crash path in queue/stuckRecovery.js,
+    // which deliberately leaves FAILED for a human to review) fits its
+    // existing purpose as a recovery tool.
+    const staleMinutes = Math.min(Number(req.body?.staleTargetMinutes) || 30, 24 * 60);
+    const staleCutoff = new Date(Date.now() - staleMinutes * 60 * 1000);
+    const staleInFlight = await Application.find({
+      status: { $in: IN_FLIGHT_STATUSES },
+      lastStatusChangeAt: { $lt: staleCutoff },
+    }).limit(limit);
+
+    let staleRecovered = 0, staleErrors = 0;
+    for (const application of staleInFlight) {
+      try {
+        transition(application, 'FAILED', `requeue-stuck — stale in ${application.status} for over ${staleMinutes}m, no active job`);
+        await application.save();
+        await retryFailedApplication(application, { note: 'requeue-stuck auto-recovery' });
+        staleRecovered++;
+      } catch (staleErr) {
+        console.error(`[requeue-stuck] failed to recover stale Application ${application._id}:`, staleErr.message);
+        staleErrors++;
+      }
+    }
+
+    res.json({ requeued: stuck.length, staleInFlightRecovered: staleRecovered, staleInFlightErrors: staleErrors });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -398,16 +433,14 @@ router.post('/applications/:id/retry', requireAdmin, async (req, res) => {
       transition(application, 'APPLYING', 'admin retry — confirmed original attempt did not submit');
       await application.save();
       await getApplyQueue().add('submit', { applicationId: application._id.toString(), retried: true });
-    } else if (application.status === 'REJECTED' || application.status === 'FAILED') {
-      const wasApplying = application.statusHistory.some(h => h.status === 'APPLYING')
-        && application.statusHistory[application.statusHistory.length - 1]?.status !== 'EVALUATING';
+    } else if (application.status === 'REJECTED') {
+      // REJECTED only ever comes from EVALUATING (see ALLOWED_TRANSITIONS) —
+      // unambiguous re-entry point.
       transition(application, 'EVALUATING', 'admin retry');
       await application.save();
-      if (wasApplying) {
-        await getApplyQueue().add('submit', { applicationId: application._id.toString(), retried: true });
-      } else {
-        await getPipelineQueue().add('evaluate', { applicationId: application._id.toString(), retried: true });
-      }
+      await getPipelineQueue().add('evaluate', { applicationId: application._id.toString(), retried: true });
+    } else if (application.status === 'FAILED') {
+      await retryFailedApplication(application, { note: 'admin retry' });
     } else {
       return res.status(409).json({ error: `Cannot retry an application in status ${application.status}` });
     }

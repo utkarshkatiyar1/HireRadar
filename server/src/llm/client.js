@@ -6,15 +6,28 @@ const { LlmConfigError } = require('./errors');
 // callStructured.js or any agent.
 const PROVIDERS = {
   gemini: () => require('./providers/gemini'),
+  voyage: () => require('./providers/voyage'),
 };
 
-function getProvider() {
-  const name = process.env.LLM_PROVIDER || 'gemini';
+function resolveProvider(name) {
   const load = PROVIDERS[name];
   if (!load) {
-    throw new LlmConfigError(`Unknown LLM_PROVIDER "${name}" — supported: ${Object.keys(PROVIDERS).join(', ')}`);
+    throw new LlmConfigError(`Unknown provider "${name}" — supported: ${Object.keys(PROVIDERS).join(', ')}`);
   }
   return { name, ...load() };
 }
 
-module.exports = { getProvider };
+function getProvider() {
+  return resolveProvider(process.env.LLM_PROVIDER || 'gemini');
+}
+
+// Embeddings resolve independently of chat — LLM_EMBEDDING_PROVIDER lets
+// embedText() (llm/embeddings.js) use a different provider (e.g. Voyage,
+// which has no chat surface) than eligibility/fitScoring/answerAgent/etc.
+// use for generateStructured, without those two concerns sharing a provider
+// choice or a daily-request-limit counter.
+function getEmbeddingProvider() {
+  return resolveProvider(process.env.LLM_EMBEDDING_PROVIDER || process.env.LLM_PROVIDER || 'gemini');
+}
+
+module.exports = { getProvider, getEmbeddingProvider };
