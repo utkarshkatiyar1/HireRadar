@@ -1,397 +1,56 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import JobTable      from './components/JobTable';
-import StatsPanel    from './components/StatsPanel';
-import CompaniesPage from './components/CompaniesPage';
-import Leaderboard   from './components/Leaderboard';
-import AuthScreen    from './components/AuthScreen';
-import TerminalPage  from './components/TerminalPage';
-import ProfilePage   from './components/ProfilePage';
-import { useAuth, authFetch } from './auth';
+import { Routes, Route, Navigate } from 'react-router-dom';
+import { ProtectedRoute, PublicOnlyRoute, AdminRoute } from './routes/guards';
+import PricingRoute from './routes/PricingRoute';
+import AppShell from './layout/AppShell';
 
-const ADMIN_EMAIL = 'utkarshkatiyar688@gmail.com';
-
-const fmtRel = (d) => {
-  if (!d) return null;
-  const s = Math.max(0, Math.floor((Date.now() - new Date(d).getTime()) / 1000));
-  if (s < 10)    return 'just now';
-  if (s < 60)    return `${s}s ago`;
-  if (s < 3600)  return `${Math.floor(s / 60)}m ago`;
-  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
-  return `${Math.floor(s / 86400)}d ago`;
-};
+import LoginPageRoute from './pages/LoginPageRoute';
+import JobsPage from './pages/JobsPage';
+import JobDetail from './pages/JobDetail';
+import ProgressPage from './pages/ProgressPage';
+import CompaniesPageRoute from './pages/CompaniesPageRoute';
+import LeaderboardPageRoute from './pages/LeaderboardPageRoute';
+import ProfilePageRoute from './pages/ProfilePageRoute';
+import TerminalPageRoute from './pages/TerminalPageRoute';
+import CandidateProfilePage from './pages/CandidateProfilePage';
+import ResumesPage from './pages/ResumesPage';
+import ApprovalQueuePage from './pages/ApprovalQueuePage';
+import ApplicationDetail from './pages/ApplicationDetail';
+import AuditTrailPage from './pages/AuditTrailPage';
+import { FEATURES } from './config/features';
 
 export default function App() {
-  const { token, user, logout } = useAuth();
-
-  const isAdmin = user?.email === ADMIN_EMAIL;
-
-  const [page, setPage] = useState('jobs'); // 'jobs' | 'progress' | 'companies' | 'leaderboard' | 'terminal' | 'profile'
-  const [, forceTick]   = useState(0);
-
-  const [theme, setTheme] = useState(() => localStorage.getItem('hr-theme') || 'dark');
-  useEffect(() => {
-    document.documentElement.dataset.theme = theme;
-    localStorage.setItem('hr-theme', theme);
-  }, [theme]);
-
-  const [jobs, setJobs]         = useState([]);
-  const [loading, setLoading]   = useState(true);
-  const [err, setErr]           = useState(null);
-  const [lastSync, setLastSync] = useState(null);
-  const [stats, setStats]       = useState(null);
-
-  const [statusFilter, setStatusFilter]   = useState('all');
-  const [search, setSearch]               = useState('');
-  const [companyFilter, setCompanyFilter] = useState('all');
-  const [currentPage, setCurrentPage]     = useState(1);
-  const [smartFilter, setSmartFilter]     = useState(true);
-  const [scraping, setScraping]           = useState(false);
-
-  const PAGE_SIZE = 50;
-
-  const abortRef = useRef(null);
-
-  const fetchJobs = useCallback(async () => {
-    // Cancel any in-flight request before starting a new one
-    abortRef.current?.abort();
-    const controller = new AbortController();
-    abortRef.current = controller;
-    try {
-      const url = smartFilter ? '/jobs' : '/jobs?raw=1';
-      const res = await authFetch(url, { signal: controller.signal });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      setJobs(await res.json());
-      setLastSync(new Date());
-      setErr(null);
-    } catch (e) {
-      if (e.name === 'AbortError') return;
-      setErr(e.message);
-    } finally {
-      if (!controller.signal.aborted) setLoading(false);
-    }
-  }, [smartFilter]);
-
-  const fetchStats = useCallback(async () => {
-    try {
-      const res = await authFetch('/jobs/stats');
-      if (res.ok) setStats(await res.json());
-    } catch {}
-  }, []);
-
-  useEffect(() => {
-    if (!token) return;
-    setLoading(true);
-    fetchJobs();
-    fetchStats();
-    const id = setInterval(() => { fetchJobs(); fetchStats(); }, 5 * 60_000);
-    return () => clearInterval(id);
-  }, [token, fetchJobs, fetchStats]);
-
-  // Tick the relative-time label in the sync badge every 30s.
-  useEffect(() => {
-    const id = setInterval(() => forceTick(n => n + 1), 30_000);
-    return () => clearInterval(id);
-  }, []);
-
-  const markApplied = async (id) => {
-    try {
-      await authFetch(`/jobs/${id}/apply`, { method: 'PATCH' });
-      setJobs(prev => prev.map(j => j._id === id ? { ...j, applied: true, appliedAt: new Date().toISOString() } : j));
-      fetchStats();
-    } catch (e) {
-      console.error('markApplied:', e);
-    }
-  };
-
-  const dismissJob = async (id) => {
-    try {
-      await authFetch(`/jobs/${id}/dismiss`, { method: 'PATCH' });
-      setJobs(prev => prev.filter(j => j._id !== id));
-    } catch (e) {
-      console.error('dismissJob:', e);
-    }
-  };
-
-  const triggerScrape = async () => {
-    if (scraping) return;
-    setScraping(true);
-    try {
-      const res = await authFetch('/admin/scrape', { method: 'POST' });
-      if (!res.ok) {
-        const { error } = await res.json();
-        alert(error || 'Scrape failed to start');
-      }
-    } catch (e) {
-      console.error('triggerScrape:', e);
-    } finally {
-      // Poll until scrape finishes, then refetch jobs
-      const poll = setInterval(async () => {
-        const r = await authFetch('/admin/scrape');
-        if (r.ok) {
-          const { running } = await r.json();
-          if (!running) {
-            clearInterval(poll);
-            setScraping(false);
-            fetchJobs();
-            fetchStats();
-          }
-        } else {
-          clearInterval(poll);
-          setScraping(false);
-        }
-      }, 3000);
-    }
-  };
-
-  const applied = jobs.filter(j => j.applied).length;
-  const pending = jobs.length - applied;
-
-  const companies = useMemo(
-    () => [...new Set(jobs.map(j => j.company))].sort(),
-    [jobs]
-  );
-
-  const displayed = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return jobs
-      .filter(j =>
-        statusFilter === 'applied' ? j.applied :
-        statusFilter === 'pending' ? !j.applied :
-        true
-      )
-      .filter(j => companyFilter === 'all' || j.company === companyFilter)
-      .filter(j =>
-        !q ||
-        (j.title    ?? '').toLowerCase().includes(q) ||
-        (j.company  ?? '').toLowerCase().includes(q) ||
-        (j.location ?? '').toLowerCase().includes(q)
-      );
-  }, [jobs, statusFilter, companyFilter, search, smartFilter]);
-
-  useEffect(() => { setCurrentPage(1); }, [statusFilter, companyFilter, search]);
-
-  const totalPages = Math.max(1, Math.ceil(displayed.length / PAGE_SIZE));
-  const paginated  = displayed.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
-
-  if (!token) return <AuthScreen />;
-
   return (
-    <>
-      {/* ── Header ── */}
-      <header className="header">
-        <div className="header-logo">
-          <span className="logo-text">HIRE·RADAR</span>
-        </div>
+    <Routes>
+      <Route path="/login" element={<PublicOnlyRoute><LoginPageRoute /></PublicOnlyRoute>} />
+      <Route path="/pricing" element={<PricingRoute />} />
 
-        <nav className="page-tabs">
-          <button className={`page-tab${page === 'jobs' ? ' active' : ''}`} onClick={() => setPage('jobs')}>
-            Jobs
-            {pending > 0 && <span className="page-tab-count">{pending}</span>}
-          </button>
-          <button className={`page-tab${page === 'progress' ? ' active teal' : ''}`} onClick={() => setPage('progress')}>
-            Progress
-            {applied > 0 && <span className="page-tab-count teal">{applied}</span>}
-          </button>
-          <button className={`page-tab${page === 'companies' ? ' active' : ''}`} onClick={() => setPage('companies')}>
-            Companies
-          </button>
-          <button className={`page-tab${page === 'leaderboard' ? ' active' : ''}`} onClick={() => setPage('leaderboard')}>
-            Leaderboard
-          </button>
-          {isAdmin && (
-            <button className={`page-tab terminal-tab${page === 'terminal' ? ' active' : ''}`} onClick={() => setPage('terminal')}>
-              Terminal
-            </button>
+      <Route element={<ProtectedRoute />}>
+        <Route element={<AppShell />}>
+          <Route path="/jobs" element={<JobsPage />} />
+          <Route path="/jobs/:id" element={<JobDetail />} />
+          <Route path="/progress" element={<ProgressPage />} />
+          {FEATURES.applications && (
+            <>
+              <Route path="/applications" element={<ApprovalQueuePage />} />
+              <Route path="/applications/:id" element={<ApplicationDetail />} />
+              <Route path="/audit/:applicationId" element={<AuditTrailPage />} />
+            </>
           )}
-        </nav>
-
-        <div className="header-controls">
-          {lastSync && (
-            <span className="sync-badge" title={lastSync.toLocaleString()}>
-              <span className="live-dot" />
-              {fmtRel(lastSync)}
-            </span>
+          <Route path="/companies" element={<CompaniesPageRoute />} />
+          <Route path="/leaderboard" element={<LeaderboardPageRoute />} />
+          <Route path="/profile" element={<ProfilePageRoute />} />
+          {FEATURES.candidateProfile && (
+            <Route path="/profile/candidate" element={<CandidateProfilePage />} />
           )}
-          <button
-            className="theme-toggle"
-            onClick={() => setTheme(t => t === 'dark' ? 'light' : 'dark')}
-            title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-          >
-            {theme === 'dark' ? '☀' : '🌙'}
-          </button>
-          {user && (
-            <button
-              className={`user-chip${page === 'profile' ? ' active' : ''}`}
-              onClick={() => setPage('profile')}
-              title={`${user.name} — Profile & Settings`}
-            >
-              <span className="user-avatar">{user.name[0].toUpperCase()}</span>
-            </button>
-          )}
-        </div>
-      </header>
+          <Route path="/resumes" element={<ResumesPage />} />
+          <Route element={<AdminRoute />}>
+            <Route path="/terminal" element={<TerminalPageRoute />} />
+          </Route>
+        </Route>
+      </Route>
 
-      <div className="app">
-      {/* ── Jobs Page ── */}
-      {page === 'jobs' && (
-        <>
-          <div className="filter-bar">
-            <div className="status-tabs">
-              <button
-                className={`status-tab${statusFilter === 'all' ? ' active' : ''}`}
-                onClick={() => setStatusFilter('all')}
-              >
-                All <span className="tab-count">{jobs.length}</span>
-              </button>
-              <button
-                className={`status-tab${statusFilter === 'pending' ? ' active' : ''}`}
-                onClick={() => setStatusFilter('pending')}
-              >
-                Pending <span className="tab-count">{pending}</span>
-              </button>
-              <button
-                className={`status-tab teal-tab${statusFilter === 'applied' ? ' active' : ''}`}
-                onClick={() => setStatusFilter('applied')}
-              >
-                Applied <span className="tab-count">{applied}</span>
-              </button>
-            </div>
-            <div className="filter-right">
-              <input
-                className="search-input"
-                type="search"
-                placeholder="Search title, company, location…"
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-              />
-              <select
-                className="company-select"
-                value={companyFilter}
-                onChange={e => setCompanyFilter(e.target.value)}
-              >
-                <option value="all">All companies</option>
-                {companies.map(c => (
-                  <option key={c} value={c}>{c}</option>
-                ))}
-              </select>
-              <button
-                className={`smart-filter-toggle${smartFilter ? ' on' : ''}`}
-                onClick={() => setSmartFilter(v => !v)}
-                title={smartFilter ? 'Smart filters ON — click to see all raw jobs' : 'Smart filters OFF — click to enable'}
-              >
-                <span className="toggle-track">
-                  <span className="toggle-thumb" />
-                </span>
-                Smart Filter
-              </button>
-              <span className="result-count">
-                {loading ? '…' : `${displayed.length} result${displayed.length !== 1 ? 's' : ''}`}
-              </span>
-              <button
-                className={`refresh-btn${loading ? ' spinning' : ''}`}
-                onClick={() => { fetchJobs(); fetchStats(); }}
-                disabled={loading}
-                title="Refetch jobs from server"
-              >
-                <span className="spin-icon">↻</span>
-              </button>
-              {isAdmin && (
-                <button
-                  className={`scrape-btn${scraping ? ' running' : ''}`}
-                  onClick={triggerScrape}
-                  disabled={scraping}
-                  title="Trigger a full scrape run on the server"
-                >
-                  {scraping ? 'Scraping…' : '⚡ Run Scrape'}
-                </button>
-              )}
-            </div>
-          </div>
-
-          <main>
-            {loading && (
-              <div className="loading-pulse">
-                <div className="skeleton-row" />
-                <div className="skeleton-row" />
-                <div className="skeleton-row" />
-              </div>
-            )}
-            {!loading && err && <p className="msg error">Error: {err}</p>}
-            {!loading && !err && (
-              <>
-                <JobTable jobs={paginated} onMarkApplied={markApplied} onDismiss={dismissJob} />
-                {totalPages > 1 && (
-                  <div className="pagination">
-                    <button
-                      className="page-btn"
-                      onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                      disabled={currentPage === 1}
-                    >
-                      ← Prev
-                    </button>
-                    <span className="page-info">
-                      Page {currentPage} of {totalPages}
-                    </span>
-                    <button
-                      className="page-btn"
-                      onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                      disabled={currentPage === totalPages}
-                    >
-                      Next →
-                    </button>
-                  </div>
-                )}
-              </>
-            )}
-          </main>
-        </>
-      )}
-
-      {/* ── Progress Page ── */}
-      {page === 'progress' && (
-        <main className="progress-page">
-          {stats
-            ? <StatsPanel stats={stats} />
-            : <p className="msg">Loading stats…</p>
-          }
-        </main>
-      )}
-
-      {/* ── Companies Page ── */}
-      {page === 'companies' && (
-        <main>
-          <CompaniesPage isAdmin={isAdmin} />
-        </main>
-      )}
-
-      {/* ── Leaderboard Page ── */}
-      {page === 'leaderboard' && (
-        <main>
-          <Leaderboard currentUserId={user?.id} />
-        </main>
-      )}
-
-      {/* ── Profile Page ── */}
-      {page === 'profile' && (
-        <main>
-          <ProfilePage user={user} />
-        </main>
-      )}
-
-      {/* ── Terminal Page (admin only) ── */}
-      {page === 'terminal' && isAdmin && (
-        <main className="terminal-main">
-          <TerminalPage />
-        </main>
-      )}
-
-      {/* ── Footer ── */}
-      <footer className="footer">
-        <span className="footer-copy">© {new Date().getFullYear()} Utkarsh Katiyar · HireRadar</span>
-        <span className="footer-sep">·</span>
-        <span className="footer-note">Personal job aggregator — not affiliated with any listed company</span>
-      </footer>
-      </div>
-    </>
+      <Route path="/" element={<Navigate to="/jobs" replace />} />
+      <Route path="*" element={<Navigate to="/jobs" replace />} />
+    </Routes>
   );
 }

@@ -1,5 +1,6 @@
-const axios     = require('axios');
-const normalize = require('../../utils/normalize');
+const axios      = require('axios');
+const normalize  = require('../../utils/normalize');
+const htmlToText = require('../../utils/htmlToText');
 
 // Generic Greenhouse ATS scraper (public boards API — no auth required).
 // src must include: greenhouseToken
@@ -16,12 +17,16 @@ module.exports = async (src) => {
   );
 
   return (data.jobs ?? []).map(j => normalize({
-    title:      j.title ?? '',
-    company:    src.company,
-    location:   j.location?.name ?? '',
-    exp:        '',
-    department: j.departments?.[0]?.name ?? '',
-    url:        j.absolute_url ?? '',
-    date:       new Date(j.updated_at ?? Date.now()),
+    title:       j.title ?? '',
+    company:     src.company,
+    location:    j.location?.name ?? '',
+    exp:         '',
+    department:  j.departments?.[0]?.name ?? '',
+    url:         j.absolute_url ?? '',
+    date:        new Date(j.updated_at ?? Date.now()),
+    // `content` is HTML (requested via params.content: true above) — strip
+    // to plain text for storage/embedding, same as the other ATS scrapers'
+    // plain-text description fields.
+    description: htmlToText(j.content),
   }));
 };

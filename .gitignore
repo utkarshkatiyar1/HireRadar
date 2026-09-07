@@ -30,3 +30,6 @@ Thumbs.db
 playwright-report/
 test-results/
 .claude/
+
+# Uploaded resumes / apply-adapter screenshots — never commit user files
+server/uploads/

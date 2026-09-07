@@ -105,6 +105,9 @@ export default function TerminalPage() {
             <span className="terminal-level" style={{ color: LEVEL_COLOR[e.level] ?? '#94a3b8' }}>
               {e.level}
             </span>
+            {e.service && e.service !== 'api' && (
+              <span className="terminal-service">[{e.service}]</span>
+            )}
             <span className="terminal-msg">{e.msg}</span>
           </div>
         ))}
