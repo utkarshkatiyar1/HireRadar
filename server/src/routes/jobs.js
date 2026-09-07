@@ -1,7 +1,7 @@
 const router = require('express').Router();
 const mongoose = require('mongoose');
 const { Job, User, UserJobState, UserPrefs, Source } = require('../utils/db');
-const { isLocationOk, isSenior, scoreJob, DEFAULTS } = require('../utils/filter');
+const { isLocationOk, isSenior, isInternship, scoreJob, DEFAULTS } = require('../utils/filter');
 const { requireAuth } = require('../middleware/auth');
 const { effectivePostedAt } = require('../utils/recency');
 
@@ -112,6 +112,7 @@ router.get('/', requireAuth, async (req, res) => {
     const threshold = prefs.scoreThreshold ?? DEFAULTS.scoreThreshold;
     const jobs = smartRecent
       .filter(j => !isSenior(j.title, prefs))
+      .filter(j => !isInternship(j.title))
       .map(j => ({ ...j, score: scoreJob(j, prefs) }))
       .filter(j => j.score >= threshold)
       .sort((a, b) => byMatchThenRecency(a, b) || b.score - a.score);
