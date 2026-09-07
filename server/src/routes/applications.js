@@ -116,7 +116,10 @@ router.get('/counts', requireAuth, async (req, res) => {
       Application.countDocuments({ userId, status: { $in: NEEDS_ACTION } }),
       Application.countDocuments({ userId, status: 'READY_FOR_APPROVAL' }),
       Application.countDocuments({ userId, status: 'APPLYING' }),
-      Application.countDocuments({ userId, status: 'SUBMITTED', appliedAt: { $gte: day0 } }),
+      // SUBMITTED (automated) and APPLIED_MANUALLY (user applied outside the
+      // tool) both represent a completed application and both stamp
+      // appliedAt — see POST /:id/applied-manually and applyProcessor.js.
+      Application.countDocuments({ userId, status: { $in: ['SUBMITTED', 'APPLIED_MANUALLY'] }, appliedAt: { $gte: day0 } }),
     ]);
 
     res.json({ needsAction, readyForApproval, applying, submittedToday });

@@ -1,6 +1,7 @@
 const router = require('express').Router();
 const mongoose = require('mongoose');
 const { Job, User, UserJobState, UserPrefs, Source } = require('../utils/db');
+const { Application } = require('../models/application');
 const { isLocationOk, isSenior, isInternship, scoreJob, DEFAULTS } = require('../utils/filter');
 const { requireAuth } = require('../middleware/auth');
 const { effectivePostedAt } = require('../utils/recency');
@@ -131,6 +132,17 @@ router.get('/sources', async (_req, res) => {
   }
 });
 
+// "Applied" here means the Application actually reached a completed outcome
+// — SUBMITTED (automated) or APPLIED_MANUALLY (user applied outside the
+// tool) — not merely tracked/discovered. Both stamp `applied`/`appliedAt`
+// (see applyProcessor.js and routes/applications.js's POST
+// /:id/applied-manually), which is what this used to read off the legacy
+// UserJobState model before Application superseded it (see models/
+// application.js) — UserJobState was never updated by the real apply
+// pipeline or by the new manual-apply action, so these stats had drifted
+// out of sync with what actually happened.
+const APPLIED_STATUSES = ['SUBMITTED', 'APPLIED_MANUALLY'];
+
 router.get('/stats', requireAuth, async (req, res) => {
   try {
     const userId = oid(req.user.uid);
@@ -140,8 +152,8 @@ router.get('/stats', requireAuth, async (req, res) => {
     const month0 = new Date(day0); month0.setUTCDate(day0.getUTCDate() - 29);
     const day1   = new Date(day0); day1.setUTCDate(day0.getUTCDate() + 1);
 
-    const daily = await UserJobState.aggregate([
-      { $match: { userId, applied: true, appliedAt: { $gte: month0 } } },
+    const daily = await Application.aggregate([
+      { $match: { userId, status: { $in: APPLIED_STATUSES }, appliedAt: { $gte: month0 } } },
       { $group: {
           _id:   { $dateToString: { format: '%Y-%m-%d', date: '$appliedAt' } },
           count: { $sum: 1 },
@@ -149,8 +161,8 @@ router.get('/stats', requireAuth, async (req, res) => {
       { $sort: { _id: 1 } },
     ]);
 
-    const topCompanies = await UserJobState.aggregate([
-      { $match: { userId, applied: true } },
+    const topCompanies = await Application.aggregate([
+      { $match: { userId, status: { $in: APPLIED_STATUSES } } },
       { $lookup: { from: 'jobs', localField: 'jobId', foreignField: '_id', as: 'job' } },
       { $unwind: '$job' },
       { $group: {
@@ -163,13 +175,13 @@ router.get('/stats', requireAuth, async (req, res) => {
       { $limit: 8 },
     ]);
 
-    const [totals] = await UserJobState.aggregate([
+    const [totals] = await Application.aggregate([
       { $match: { userId } },
       { $facet: {
-          applied:   [{ $match: { applied: true } }, { $count: 'n' }],
-          appToday:  [{ $match: { applied: true, appliedAt: { $gte: day0 } } }, { $count: 'n' }],
-          appWeek:   [{ $match: { applied: true, appliedAt: { $gte: week0 } } }, { $count: 'n' }],
-          appMonth:  [{ $match: { applied: true, appliedAt: { $gte: month0 } } }, { $count: 'n' }],
+          applied:   [{ $match: { status: { $in: APPLIED_STATUSES } } }, { $count: 'n' }],
+          appToday:  [{ $match: { status: { $in: APPLIED_STATUSES }, appliedAt: { $gte: day0 } } }, { $count: 'n' }],
+          appWeek:   [{ $match: { status: { $in: APPLIED_STATUSES }, appliedAt: { $gte: week0 } } }, { $count: 'n' }],
+          appMonth:  [{ $match: { status: { $in: APPLIED_STATUSES }, appliedAt: { $gte: month0 } } }, { $count: 'n' }],
       }},
     ]);
 
@@ -200,8 +212,8 @@ router.get('/leaderboard', requireAuth, async (_req, res) => {
 
     const [allUsers, stats] = await Promise.all([
       User.find({}).select('_id name').lean(),
-      UserJobState.aggregate([
-        { $match: { applied: true } },
+      Application.aggregate([
+        { $match: { status: { $in: APPLIED_STATUSES } } },
         { $group: {
             _id:      '$userId',
             total:    { $sum: 1 },

@@ -48,7 +48,7 @@ const MANUAL_APPLY_ELIGIBLE = new Set([
 const BUCKETS = {
   needsAction: { label: 'Needs Action', statuses: ['READY_FOR_PREPARATION', 'READY_FOR_APPROVAL', 'ACTION_REQUIRED', 'DRY_RUN_COMPLETED'], sort: 'best_match' },
   inProgress:  { label: 'In Progress',  statuses: ['DISCOVERED', 'EVALUATING', 'INSPECTING_FORM', 'PREPARING', 'APPROVED', 'APPLYING'], sort: 'updated_recent' },
-  done:        { label: 'Done',         statuses: ['SUBMITTED'], sort: 'updated_recent' },
+  done:        { label: 'Done',         statuses: ['SUBMITTED', 'APPLIED_MANUALLY'], sort: 'updated_recent' },
   issues:      { label: 'Issues',       statuses: ['REJECTED', 'FAILED', 'SUBMISSION_UNCONFIRMED', 'SUBMISSION_BLOCKED', 'EXPIRED'], sort: 'updated_recent' },
 };
 
@@ -77,12 +77,14 @@ const fmtRel = (d) => {
   return new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 };
 
-// The most meaningful "when" for a row: SUBMITTED uses appliedAt specifically
-// (set exactly at confirmed submission — see applyProcessor.js), everything
-// else uses the most recent statusHistory entry (i.e. when it last actually
-// changed state), falling back to updatedAt if history is somehow empty.
+// The most meaningful "when" for a row: SUBMITTED/APPLIED_MANUALLY use
+// appliedAt specifically (set exactly at confirmed submission — see
+// applyProcessor.js — or at the manual-apply click — see routes/
+// applications.js's POST /:id/applied-manually), everything else uses the
+// most recent statusHistory entry (i.e. when it last actually changed
+// state), falling back to updatedAt if history is somehow empty.
 const rowTimestamp = (app) => {
-  if (app.status === 'SUBMITTED' && app.appliedAt) return app.appliedAt;
+  if ((app.status === 'SUBMITTED' || app.status === 'APPLIED_MANUALLY') && app.appliedAt) return app.appliedAt;
   const lastHistory = app.statusHistory?.[app.statusHistory.length - 1];
   return lastHistory?.at || app.updatedAt;
 };
