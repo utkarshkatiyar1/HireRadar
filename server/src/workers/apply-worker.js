@@ -1,6 +1,7 @@
 require('dotenv').config();
 process.env.SERVICE_NAME = process.env.SERVICE_NAME || 'apply-worker';
 require('../utils/logger'); // patch console so these logs relay into the API's admin Terminal
+require('node:dns').setServers(['1.1.1.1', '8.8.8.8']);
 const { Worker } = require('bullmq');
 const { connect } = require('../utils/db');
 const { getConnection } = require('../queue/connection');
