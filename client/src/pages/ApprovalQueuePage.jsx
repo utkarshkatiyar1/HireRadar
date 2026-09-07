@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useApplications } from '../hooks/useApplications';
-import { authFetch } from '../auth';
+import { authFetch, useAuth } from '../auth';
+import { ADMIN_EMAIL } from '../routes/guards';
 
 // Every status whose ALLOWED_TRANSITIONS entry (server/src/utils/
 // applicationState.js) does NOT include SKIPPED — showing a Skip button for
@@ -108,6 +109,8 @@ const BULK_CONFIGS = {
 };
 
 export default function ApprovalQueuePage() {
+  const { user } = useAuth();
+  const isAdmin = user?.email === ADMIN_EMAIL;
   const [bucket, setBucket] = useState('needsAction');
   const [page, setPage] = useState(1);
   const [skipping, setSkipping] = useState(() => new Set());
@@ -116,6 +119,8 @@ export default function ApprovalQueuePage() {
   const [bulkRunning, setBulkRunning] = useState(false);
   const [bulkError, setBulkError] = useState(null);
   const [last7DaysOnly, setLast7DaysOnly] = useState(false);
+  const [requeuing, setRequeuing] = useState(false);
+  const [requeueMsg, setRequeueMsg] = useState(null);
   const statusParam = BUCKETS[bucket].statuses.join(',');
   const sort = BUCKETS[bucket].sort || 'recent';
   // maxAgeDays filters by JOB posting age, which only lines up with this
@@ -185,6 +190,31 @@ export default function ApprovalQueuePage() {
     }
   };
 
+  // Admin recovery action — requeues Applications stuck in DISCOVERED (never
+  // picked up by a pipeline worker) and auto-resumes anything stale in an
+  // in-flight status (EVALUATING/INSPECTING_FORM/PREPARING/APPLYING) with no
+  // active worker. See routes/admin.js's requeue-stuck for why this exists:
+  // a worker-side outage (e.g. DNS resolution failing before the fix in
+  // workers/pipeline-worker.js) silently strands applications mid-pipeline
+  // with no user-visible error — they just never advance past DISCOVERED, so
+  // Needs Action can go quiet even though jobs ARE being scraped.
+  const handleRequeueStuck = async () => {
+    if (requeuing) return;
+    setRequeuing(true);
+    setRequeueMsg(null);
+    try {
+      const res = await authFetch('/admin/applications/requeue-stuck', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Requeue failed');
+      setRequeueMsg(`Requeued ${data.requeued} stuck, recovered ${data.staleInFlightRecovered} stale in-flight`);
+      refetch();
+    } catch (e) {
+      setRequeueMsg(e.message);
+    } finally {
+      setRequeuing(false);
+    }
+  };
+
   const handleSkip = async (e, id) => {
     e.preventDefault(); // row is a <Link> — don't navigate
     e.stopPropagation();
@@ -245,8 +275,19 @@ export default function ApprovalQueuePage() {
           <button className={`refresh-btn${loading ? ' spinning' : ''}`} onClick={refetch} disabled={loading} title="Refetch">
             <span className="spin-icon">↻</span>
           </button>
+          {isAdmin && (
+            <button
+              className="page-btn"
+              onClick={handleRequeueStuck}
+              disabled={requeuing}
+              title="Requeue applications stuck in DISCOVERED, and recover stale in-flight ones a worker never finished"
+            >
+              {requeuing ? 'Requeuing…' : 'Requeue Stuck'}
+            </button>
+          )}
         </div>
       </div>
+      {requeueMsg && <p className="msg" style={{ margin: '4px 0 0' }}>{requeueMsg}</p>}
 
       {!loading && !err && total > PAGE_SIZE && (
         <div className="pagination">
