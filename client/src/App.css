@@ -380,6 +380,16 @@ main { flex: 1; }
   align-self: center;
 }
 
+.last7-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.75rem;
+  color: var(--text-2);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
 .refresh-btn {
   padding: 5px 9px;
   background: var(--surface);

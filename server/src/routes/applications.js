@@ -26,7 +26,7 @@ const NEEDS_ACTION = ['READY_FOR_PREPARATION', 'READY_FOR_APPROVAL', 'ACTION_REQ
 router.get('/', requireAuth, async (req, res) => {
   try {
     const userId = oid(req.user.uid);
-    const { status, company, minScore, page = 1, limit = 50, sort = 'recent' } = req.query;
+    const { status, company, minScore, maxAgeDays, page = 1, limit = 50, sort = 'recent' } = req.query;
 
     const filter = { userId };
     if (status) filter.status = { $in: status.split(',') };
@@ -71,6 +71,17 @@ router.get('/', requireAuth, async (req, res) => {
     let merged = apps
       .filter(a => jobById.has(String(a.jobId)))
       .map(a => ({ ...a, job: jobById.get(String(a.jobId)) }));
+
+    // maxAgeDays: excludes jobs whose effectivePostedAt is older than the
+    // cutoff. Only meaningful here (not in the updated_recent fast-path
+    // above), which sorts by the APPLICATION's own status-change time for
+    // Done/Issues/In-Progress — job posting age isn't the relevant axis
+    // there, and that path deliberately joins Job data AFTER pagination to
+    // stay cheap, so it has no per-row job date to filter on before paging.
+    if (maxAgeDays) {
+      const cutoff = Date.now() - Number(maxAgeDays) * 24 * 60 * 60 * 1000;
+      merged = merged.filter(a => new Date(effectivePostedAt(a.job)).getTime() >= cutoff);
+    }
 
     const byRecency = (a, b) =>
       new Date(effectivePostedAt(b.job)) - new Date(effectivePostedAt(a.job))

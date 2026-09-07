@@ -115,9 +115,16 @@ export default function ApprovalQueuePage() {
   const [selected, setSelected] = useState(() => new Set());
   const [bulkRunning, setBulkRunning] = useState(false);
   const [bulkError, setBulkError] = useState(null);
+  const [last7DaysOnly, setLast7DaysOnly] = useState(false);
   const statusParam = BUCKETS[bucket].statuses.join(',');
   const sort = BUCKETS[bucket].sort || 'recent';
-  const { applications, total, loading, err, refetch } = useApplications({ status: statusParam, sort, page, limit: PAGE_SIZE });
+  // maxAgeDays filters by JOB posting age, which only lines up with this
+  // bucket's own sort axis for Needs Action (sorted by job recency/match) —
+  // In Progress/Done/Issues sort by the application's own status-change
+  // time instead, so an old job could legitimately still be actively moving
+  // through the pipeline there. Keep the toggle scoped to Needs Action.
+  const maxAgeDays = bucket === 'needsAction' && last7DaysOnly ? 7 : undefined;
+  const { applications, total, loading, err, refetch } = useApplications({ status: statusParam, sort, page, limit: PAGE_SIZE, maxAgeDays });
 
   // Only one bulkable status can be active per bucket in practice (Needs
   // Action -> READY_FOR_PREPARATION, In Progress -> APPROVED) — if a bucket
@@ -222,6 +229,16 @@ export default function ApprovalQueuePage() {
           ))}
         </div>
         <div className="filter-right">
+          {bucket === 'needsAction' && (
+            <label className="last7-toggle">
+              <input
+                type="checkbox"
+                checked={last7DaysOnly}
+                onChange={(e) => { setLast7DaysOnly(e.target.checked); setPage(1); }}
+              />
+              Last 7 days only
+            </label>
+          )}
           <span className="result-count">
             {loading ? '…' : total === 0 ? '0 results' : `${rangeStart}–${rangeEnd} of ${total}`}
           </span>

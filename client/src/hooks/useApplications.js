@@ -4,7 +4,7 @@ import { usePolling } from './usePolling';
 
 // GET /applications — read-only, no side effects (see backend's Pipeline
 // orchestration notes: a GET must never create records or enqueue work).
-export function useApplications({ status, sort = 'recent', page = 1, limit = 50, enabled = true } = {}) {
+export function useApplications({ status, sort = 'recent', page = 1, limit = 50, maxAgeDays, enabled = true } = {}) {
   const [applications, setApplications] = useState([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -24,6 +24,7 @@ export function useApplications({ status, sort = 'recent', page = 1, limit = 50,
     try {
       const params = new URLSearchParams({ sort, page, limit });
       if (status) params.set('status', status);
+      if (maxAgeDays) params.set('maxAgeDays', maxAgeDays);
       const res = await authFetch(`/applications?${params.toString()}`, { signal: controller.signal });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
@@ -36,7 +37,7 @@ export function useApplications({ status, sort = 'recent', page = 1, limit = 50,
     } finally {
       if (!controller.signal.aborted) setLoading(false);
     }
-  }, [status, sort, page, limit, enabled]);
+  }, [status, sort, page, limit, maxAgeDays, enabled]);
 
   useEffect(() => {
     setLoading(true);
