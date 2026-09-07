@@ -12,7 +12,7 @@ const ALLOWED_TRANSITIONS = {
   EVALUATING:             ['REJECTED', 'READY_FOR_PREPARATION', 'FAILED'],
   REJECTED:               ['EVALUATING'], // admin retry / re-evaluation only
   SKIPPED:                [], // terminal — user's own call, no automatic re-entry
-  READY_FOR_PREPARATION:  ['INSPECTING_FORM', 'SKIPPED', 'CANCELLED'],
+  READY_FOR_PREPARATION:  ['INSPECTING_FORM', 'SKIPPED', 'CANCELLED', 'APPLIED_MANUALLY'],
   INSPECTING_FORM:        ['PREPARING', 'READY_FOR_APPROVAL', 'EXPIRED', 'FAILED'],
   PREPARING:              ['READY_FOR_APPROVAL', 'FAILED'],
   // PREPARING re-entry: lets a user re-run resume routing/answer drafting/
@@ -28,12 +28,13 @@ const ALLOWED_TRANSITIONS = {
   // response field mis-extracted as a real question — see form-inspector/
   // extractFields.js's incident comments). Only re-inspection re-runs the
   // actual DOM extraction and can drop a field like that.
-  READY_FOR_APPROVAL:     ['APPROVED', 'SKIPPED', 'PREPARING', 'INSPECTING_FORM'],
+  READY_FOR_APPROVAL:     ['APPROVED', 'SKIPPED', 'PREPARING', 'INSPECTING_FORM', 'APPLIED_MANUALLY'],
   APPROVED:               ['APPLYING', 'CANCELLED'],
   APPLYING:               ['SUBMITTED', 'DRY_RUN_COMPLETED', 'SUBMISSION_UNCONFIRMED', 'ACTION_REQUIRED', 'SUBMISSION_BLOCKED', 'FAILED'],
-  ACTION_REQUIRED:        ['APPLYING', 'SKIPPED', 'CANCELLED'], // resume re-enqueues back into APPLYING
-  DRY_RUN_COMPLETED:      ['APPROVED', 'INSPECTING_FORM'], // re-approve to actually submit once dry-run is validated; INSPECTING_FORM — see reinspect above
+  ACTION_REQUIRED:        ['APPLYING', 'SKIPPED', 'CANCELLED', 'APPLIED_MANUALLY'], // resume re-enqueues back into APPLYING
+  DRY_RUN_COMPLETED:      ['APPROVED', 'INSPECTING_FORM', 'APPLIED_MANUALLY'], // re-approve to actually submit once dry-run is validated; INSPECTING_FORM — see reinspect above
   SUBMITTED:              [], // terminal
+  APPLIED_MANUALLY:       [], // terminal — user applied outside the tool, same as SUBMITTED but never went through our apply pipeline
   // Admin-only re-entry (POST /admin/applications/:id/retry) — still never
   // auto-retried by the pipeline itself. Exists for the case where the
   // unconfirmed outcome is traceable to a real bug (e.g. the resume-attach

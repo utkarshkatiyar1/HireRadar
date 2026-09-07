@@ -367,6 +367,29 @@ router.post('/:id/approve', requireAuth, async (req, res) => {
   }
 });
 
+// POST /applications/:id/applied-manually — user applied to the job
+// themselves outside this tool (e.g. via the company's own site) instead of
+// continuing the automated flow. Terminal, same as SUBMITTED for
+// applied/appliedAt bookkeeping, but never went through our apply pipeline —
+// kept as a distinct status (not SUBMITTED) so audit history/analytics can
+// tell the two apart.
+router.post('/:id/applied-manually', requireAuth, async (req, res) => {
+  try {
+    const userId = oid(req.user.uid);
+    const application = await Application.findOne({ _id: oid(req.params.id), userId });
+    if (!application) return res.status(404).json({ error: 'Not found' });
+
+    transition(application, 'APPLIED_MANUALLY', 'user applied manually outside the tool');
+    application.applied = true;
+    application.appliedAt = new Date();
+    await application.save();
+    res.json(application);
+  } catch (e) {
+    if (e instanceof InvalidTransitionError) return res.status(409).json({ error: e.message });
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // POST /applications/:id/skip — the ONLY pass-on-this-role action a regular
 // user sees. REJECTED is written exclusively by the pipeline (eligibility.js)
 // and is not user-triggerable here.

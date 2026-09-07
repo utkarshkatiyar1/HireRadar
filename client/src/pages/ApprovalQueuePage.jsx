@@ -11,6 +11,16 @@ import { ADMIN_EMAIL } from '../routes/guards';
 const SKIPPABLE_EXCLUDE = new Set([
   'SUBMITTED', 'SKIPPED', 'REJECTED', 'CANCELLED',
   'DRY_RUN_COMPLETED', 'EXPIRED', 'SUBMISSION_UNCONFIRMED', 'SUBMISSION_BLOCKED', 'FAILED',
+  'APPLIED_MANUALLY',
+]);
+
+// Every Needs Action status whose ALLOWED_TRANSITIONS entry (server/src/
+// utils/applicationState.js) includes APPLIED_MANUALLY — i.e. every status
+// this bucket shows, since all four represent a job the user could just go
+// apply to directly on the company's site instead of continuing the
+// automated flow. Keep in sync with that file, same as SKIPPABLE_EXCLUDE above.
+const MANUAL_APPLY_ELIGIBLE = new Set([
+  'READY_FOR_PREPARATION', 'READY_FOR_APPROVAL', 'ACTION_REQUIRED', 'DRY_RUN_COMPLETED',
 ]);
 
 // Bucketed by "does this need a decision from you right now", not by pipeline
@@ -52,7 +62,7 @@ const STATUS_LABEL = {
   READY_FOR_APPROVAL: 'Ready for Approval', APPROVED: 'Approved', APPLYING: 'Applying',
   ACTION_REQUIRED: 'Action Required', DRY_RUN_COMPLETED: 'Dry-Run Completed', SUBMITTED: 'Submitted',
   SUBMISSION_UNCONFIRMED: 'Submission Unconfirmed', SUBMISSION_BLOCKED: 'Submission Blocked',
-  CANCELLED: 'Cancelled', EXPIRED: 'Expired', FAILED: 'Failed',
+  CANCELLED: 'Cancelled', EXPIRED: 'Expired', FAILED: 'Failed', APPLIED_MANUALLY: 'Applied Manually',
 };
 
 const PAGE_SIZE = 50;
@@ -114,6 +124,7 @@ export default function ApprovalQueuePage() {
   const [bucket, setBucket] = useState('needsAction');
   const [page, setPage] = useState(1);
   const [skipping, setSkipping] = useState(() => new Set());
+  const [markingApplied, setMarkingApplied] = useState(() => new Set());
   const [acting, setActing] = useState(() => new Set());
   const [selected, setSelected] = useState(() => new Set());
   const [bulkRunning, setBulkRunning] = useState(false);
@@ -225,6 +236,28 @@ export default function ApprovalQueuePage() {
       refetch();
     } finally {
       setSkipping(prev => { const next = new Set(prev); next.delete(id); return next; });
+    }
+  };
+
+  // Opens the job's own posting so the user can apply directly on the
+  // company's site, then marks the Application APPLIED_MANUALLY (terminal —
+  // see applicationState.js) so it drops out of Needs Action. Distinct from
+  // the existing NONE-automation "Apply manually" link: that one is a plain
+  // <a> with no status change (nothing here for our pipeline to automate
+  // anyway); this is available on any Needs Action row and records that the
+  // user chose to bypass the automated flow themselves.
+  const handleMarkAppliedManually = async (e, app) => {
+    e.preventDefault(); // row is a <Link> — don't navigate
+    e.stopPropagation();
+    const id = app._id;
+    if (markingApplied.has(id)) return;
+    if (app.job?.url) window.open(app.job.url, '_blank', 'noopener,noreferrer');
+    setMarkingApplied(prev => new Set(prev).add(id));
+    try {
+      await authFetch(`/applications/${id}/applied-manually`, { method: 'POST' });
+      refetch();
+    } finally {
+      setMarkingApplied(prev => { const next = new Set(prev); next.delete(id); return next; });
     }
   };
 
@@ -412,6 +445,16 @@ export default function ApprovalQueuePage() {
                   <Link to={`/applications/${app._id}`} className="btn-apply aq-row-action-btn" onClick={(e) => e.stopPropagation()}>
                     Resolve →
                   </Link>
+                )}
+                {MANUAL_APPLY_ELIGIBLE.has(app.status) && (
+                  <button
+                    className="aq-manual-apply-btn"
+                    onClick={(e) => handleMarkAppliedManually(e, app)}
+                    disabled={markingApplied.has(app._id)}
+                    title="Applied manually — opens the job posting and marks this as applied outside the tool"
+                  >
+                    {markingApplied.has(app._id) ? '…' : '🖐️'}
+                  </button>
                 )}
                 {!SKIPPABLE_EXCLUDE.has(app.status) && (
                   <button

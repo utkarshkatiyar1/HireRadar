@@ -39,6 +39,7 @@ const STATUS_EXPLANATION = {
   CANCELLED: 'Cancelled.',
   EXPIRED: 'This posting is no longer open — it was likely taken down after being scraped.',
   FAILED: 'Something went wrong in the pipeline. An admin retry is needed to move it forward again.',
+  APPLIED_MANUALLY: 'You applied to this one directly, outside this tool.',
 };
 
 // Dot color per reached status — green for real progress, red for anything
@@ -48,7 +49,7 @@ const HISTORY_DOT_COLOR = {
   REJECTED: '#f87171', FAILED: '#f87171', SUBMISSION_BLOCKED: '#f87171', SUBMISSION_UNCONFIRMED: '#f87171', EXPIRED: '#f87171',
   ACTION_REQUIRED: '#f97316',
   SKIPPED: '#94a3b8', CANCELLED: '#94a3b8',
-  SUBMITTED: '#22c55e', DRY_RUN_COMPLETED: '#22c55e', APPROVED: '#22c55e',
+  SUBMITTED: '#22c55e', DRY_RUN_COMPLETED: '#22c55e', APPROVED: '#22c55e', APPLIED_MANUALLY: '#22c55e',
 };
 const DEFAULT_DOT_COLOR = 'var(--violet)';
 
@@ -462,7 +463,7 @@ export default function ApplicationDetail() {
           {/* Every status here has an ALLOWED_TRANSITIONS entry (server/src/
               utils/applicationState.js) that does NOT include SKIPPED —
               showing Skip for any of these would 409 on click. */}
-          {!['SUBMITTED', 'SKIPPED', 'REJECTED', 'CANCELLED', 'DRY_RUN_COMPLETED', 'EXPIRED', 'SUBMISSION_UNCONFIRMED', 'SUBMISSION_BLOCKED', 'FAILED'].includes(app.status) && (
+          {!['SUBMITTED', 'SKIPPED', 'REJECTED', 'CANCELLED', 'DRY_RUN_COMPLETED', 'EXPIRED', 'SUBMISSION_UNCONFIRMED', 'SUBMISSION_BLOCKED', 'FAILED', 'APPLIED_MANUALLY'].includes(app.status) && (
             <button className="jc-dismiss" onClick={skip} disabled={busy} title="Pass on this role">Skip</button>
           )}
           {user?.email === ADMIN_EMAIL && ADMIN_RETRYABLE_STATUSES.has(app.status) && (

@@ -3809,6 +3809,17 @@ tbody tr.row-applied:hover td      { background: var(--teal-dim); opacity: 0.8; 
 .aq-skip-btn:hover { color: var(--danger); background: rgba(239,68,68,.1); }
 .aq-skip-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
+.aq-manual-apply-btn {
+  background: transparent; border: none; color: var(--text-4);
+  cursor: pointer; font-size: 0.95rem; line-height: 1;
+  padding: 3px 6px; border-radius: 5px;
+  opacity: 0;
+  transition: opacity .15s, color .1s, background .1s;
+}
+.aq-row:hover .aq-manual-apply-btn { opacity: 1; }
+.aq-manual-apply-btn:hover { color: var(--accent, #22c55e); background: rgba(34,197,94,.1); }
+.aq-manual-apply-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
 .aq-detail {
   display: flex;
   flex-direction: column;
