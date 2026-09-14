@@ -57,6 +57,9 @@ export default function Sidebar({ mobileOpen, onCloseMobile }) {
 
           <div className="sb-divider" />
 
+          <NavLink to="/naukri-script" className={linkClass} onClick={onCloseMobile}>
+            <span>Naukri Script</span>
+          </NavLink>
           <NavLink to="/pricing" className={linkClass} onClick={onCloseMobile}>
             <span>Pricing</span>
           </NavLink>
