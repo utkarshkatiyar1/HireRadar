@@ -1,6 +1,9 @@
 // Bookmarklet template for the Naukri Power Search tool (NaukriScriptPage.jsx).
-// Ported verbatim from the standalone ScriptsSaver project's naukri-template.js —
-// scoring/filtering/dashboard logic here must stay byte-identical to that source.
+// Originally ported from the standalone ScriptsSaver project's naukri-template.js;
+// has since diverged with bug fixes (word-boundary company/stack matching, stricter
+// job-ID date validation) and UX additions (loading overlay, hide/seen tracking,
+// sort, custom tooltip) — no longer byte-identical to that source, kept in sync
+// only where it still makes sense to.
 // Placeholders (__XXX__) are substituted with JSON-encoded config values before
 // the script is copied/downloaded; it is pasted into the Naukri console by hand
 // because the site requires session headers captured via "Copy as fetch".
@@ -17,6 +20,11 @@ export const NAUKRI_TEMPLATE = `(async () => {
     resultsPerPage: __RESULTS_PER_PAGE__,
     concurrency: __CONCURRENCY__,
     minScore: __MIN_SCORE__,
+
+    // Delay between concurrency batches. Naukri starts returning 406s near
+    // the tail of large runs (200+ requests) when this is too low — raise it
+    // if you see 406s in the console.
+    batchDelayMs: __BATCH_DELAY_MS__,
 
     locations: __LOCATIONS__,
 
@@ -893,7 +901,9 @@ export const NAUKRI_TEMPLATE = `(async () => {
       \`⏳ \${completed}/\${tasks.length}\`
     );
 
-    await sleep(180);
+    await sleep(
+      CONFIG.batchDelayMs
+    );
   }
 
   // ============================================================
@@ -2655,6 +2665,7 @@ export const DEFAULT_NAUKRI_CONFIG = {
   resultsPerPage: 20,
   concurrency: 4,
   minScore: 35,
+  batchDelayMs: 400,
   locations: [
     "bengaluru",
     "gurugram",

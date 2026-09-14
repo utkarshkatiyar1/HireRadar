@@ -31,6 +31,7 @@ function generateScript(cfg) {
     .replace('__RESULTS_PER_PAGE__', JSON.stringify(cfg.resultsPerPage))
     .replace('__CONCURRENCY__', JSON.stringify(cfg.concurrency))
     .replace('__MIN_SCORE__', JSON.stringify(cfg.minScore))
+    .replace('__BATCH_DELAY_MS__', JSON.stringify(cfg.batchDelayMs))
     .replace('__LOCATIONS__', jsArrayLiteral(cfg.locations))
     .replace('__SEARCHES__', jsArrayLiteral(cfg.searches))
     .replace('__EXCLUDED_COMPANIES__', jsArrayLiteral(cfg.excludedCompanies));
@@ -48,6 +49,7 @@ export default function NaukriScriptPage() {
       concurrency: String(stored.concurrency),
       pagesPerSearch: String(stored.pagesPerSearch),
       resultsPerPage: String(stored.resultsPerPage),
+      batchDelayMs: String(stored.batchDelayMs ?? DEFAULT_NAUKRI_CONFIG.batchDelayMs),
       locations: stored.locations.join('\n'),
       searches: stored.searches.join('\n'),
       excludedCompanies: stored.excludedCompanies.join('\n'),
@@ -64,6 +66,7 @@ export default function NaukriScriptPage() {
     concurrency: Number(form.concurrency) || 1,
     pagesPerSearch: Number(form.pagesPerSearch) || 1,
     resultsPerPage: Number(form.resultsPerPage) || 20,
+    batchDelayMs: Number(form.batchDelayMs) || 0,
     locations: linesToArray(form.locations),
     searches: linesToArray(form.searches),
     excludedCompanies: linesToArray(form.excludedCompanies),
@@ -93,6 +96,7 @@ export default function NaukriScriptPage() {
       concurrency: String(DEFAULT_NAUKRI_CONFIG.concurrency),
       pagesPerSearch: String(DEFAULT_NAUKRI_CONFIG.pagesPerSearch),
       resultsPerPage: String(DEFAULT_NAUKRI_CONFIG.resultsPerPage),
+      batchDelayMs: String(DEFAULT_NAUKRI_CONFIG.batchDelayMs),
       locations: DEFAULT_NAUKRI_CONFIG.locations.join('\n'),
       searches: DEFAULT_NAUKRI_CONFIG.searches.join('\n'),
       excludedCompanies: DEFAULT_NAUKRI_CONFIG.excludedCompanies.join('\n'),
@@ -188,6 +192,14 @@ export default function NaukriScriptPage() {
                   Results per page
                   <input className="cpf-years-input" type="number" value={form.resultsPerPage} onChange={set('resultsPerPage')} />
                 </label>
+                <label className="cpf-field">
+                  Delay between batches (ms)
+                  <input className="cpf-years-input" type="number" step="50" value={form.batchDelayMs} onChange={set('batchDelayMs')} />
+                </label>
+              </div>
+              <div className="profile-section-desc">
+                Naukri starts returning 406 errors near the end of large runs (200+ requests) if this
+                is too low. Raise it if you see 406s in the console.
               </div>
             </div>
 
