@@ -67,6 +67,16 @@ const isSenior = (title, prefs = DEFAULTS) => {
   return exclude.some(k => t.includes(k));
 };
 
+// Deliberately separate from seniorityExclude (a plain-substring, per-user
+// customizable list) rather than adding 'intern' to it — "intern" is a
+// substring of "internal" and "international", so a plain .includes() check
+// would also wrongly exclude titles like "Internal Coach" or "Software
+// Engineer (International)". Not user-configurable: excluding internships
+// from full-time job matching is a fixed rule, not a preference to tune per
+// user the way seniority cutoffs are.
+const INTERNSHIP_PATTERN = /\b(?:intern|interns|internship|internships)\b/i;
+const isInternship = (title) => INTERNSHIP_PATTERN.test(title || '');
+
 const scoreJob = (j, prefs = DEFAULTS) => {
   const text = [j.title || '', j.department || '', j.exp || ''].join(' ').toLowerCase();
   let score = 0;
@@ -82,4 +92,4 @@ const scoreJob = (j, prefs = DEFAULTS) => {
 // scrapeFilter: store everything, filter nothing at scrape time
 const scrapeFilter = (jobs) => jobs;
 
-module.exports = { DEFAULTS, scrapeFilter, isLocationOk, isSenior, scoreJob };
+module.exports = { DEFAULTS, scrapeFilter, isLocationOk, isSenior, isInternship, scoreJob };

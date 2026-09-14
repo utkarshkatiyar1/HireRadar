@@ -19,7 +19,7 @@ const FEATURES = [
   },
 ];
 
-export default function AuthScreen() {
+export default function AuthScreen({ onViewPricing }) {
   const { login, signup } = useAuth();
   const [mode, setMode]     = useState('login'); // 'login' | 'signup'
   const [email, setEmail]   = useState('');
@@ -120,6 +120,7 @@ export default function AuthScreen() {
                 autoComplete="email"
                 placeholder="you@example.com"
                 required
+                disabled={busy}
                 value={email}
                 onChange={e => setEmail(e.target.value)}
               />
@@ -134,6 +135,7 @@ export default function AuthScreen() {
                   placeholder="How you appear on the leaderboard"
                   required
                   minLength={2}
+                  disabled={busy}
                   value={name}
                   onChange={e => setName(e.target.value)}
                 />
@@ -149,6 +151,7 @@ export default function AuthScreen() {
                   placeholder={mode === 'signup' ? 'At least 6 characters' : '••••••••'}
                   required
                   minLength={6}
+                  disabled={busy}
                   value={pw}
                   onChange={e => setPw(e.target.value)}
                 />
@@ -180,8 +183,15 @@ export default function AuthScreen() {
           </p>
 
           <p className="auth-fineprint">
-            By continuing you agree to track only your own applications. We don't email you — promise.
+            By continuing you agree to track only your own applications. We don&apos;t email you — promise.
           </p>
+
+          {onViewPricing && (
+            <p className="auth-pricing-link">
+              Free to start ·{' '}
+              <button className="auth-link" onClick={onViewPricing}>View pricing →</button>
+            </p>
+          )}
         </div>
       </div>
     </div>

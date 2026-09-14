@@ -82,7 +82,18 @@ module.exports = async (src) => {
         title:    j.title ?? '',
         company:  src.company,
         location: j.locationsText ?? '',
-        exp:      (j.bulletFields ?? []).join(' '),
+        // NOT an experience requirement — Workday's search API returns the
+        // job requisition id/code here (e.g. "JR106148"), confirmed via live
+        // testing. Populating `exp` with this made every single Workday job
+        // fail agents/eligibility.js's experience-string parser and fall
+        // through to an "ambiguous, ask the LLM" eligibility check that
+        // always failed to parse it anyway — burning an LLM call (and
+        // rejecting the application on quota exhaustion) on every Workday
+        // job for no real signal. Workday's search-results API doesn't
+        // expose actual experience-level text; leaving this blank routes
+        // through eligibility.js's already-supported "no experience
+        // requirement stated" deterministic path instead.
+        exp:      '',
         url:      `${jobBase}${j.externalPath ?? ''}`,
         date:     parsePostedOn(j.postedOn),
       }));

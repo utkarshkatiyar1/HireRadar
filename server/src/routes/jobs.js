@@ -1,8 +1,10 @@
 const router = require('express').Router();
 const mongoose = require('mongoose');
 const { Job, User, UserJobState, UserPrefs, Source } = require('../utils/db');
-const { isLocationOk, isSenior, scoreJob, DEFAULTS } = require('../utils/filter');
+const { Application } = require('../models/application');
+const { isLocationOk, isSenior, isInternship, scoreJob, DEFAULTS } = require('../utils/filter');
 const { requireAuth } = require('../middleware/auth');
+const { effectivePostedAt } = require('../utils/recency');
 
 const oid = (s) => new mongoose.Types.ObjectId(s);
 
@@ -20,14 +22,30 @@ const mergeUserState = async (jobs, userId) => {
         applied:   !!s?.applied,
         appliedAt: s?.appliedAt ?? null,
         dismissed: !!s?.dismissed,
+        // Populated by the background pass in utils/jobMatchBatch.js —
+        // null for jobs not yet scored for this user (new jobs since the
+        // last cron tick, or a candidate profile that didn't exist yet).
+        matchScore: s?.matchScore?.computedAt ? s.matchScore.total : null,
+        // Whether that matchScore includes a real embedding similarity
+        // signal, vs. a keyword-only fallback (quota/provider outage — see
+        // utils/jobMatch.js). filter.js's keyword lists are known-incomplete,
+        // so a keyword-only score is lower-confidence and must not outrank
+        // a real semantic score — see byMatchThenRecency below.
+        hasSemanticScore: !!(s?.matchScore?.computedAt && s.matchScore.semanticScore != null),
       };
     })
     .filter(j => !j.dismissed);
 };
 
+// Smart-filter mode narrows to a tighter recency window than raw/history
+// mode's 15-day cutoff — a personalized "recent + best match" view rather
+// than the broader browse-everything list raw mode provides.
+const SMART_FILTER_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+
 router.get('/', requireAuth, async (req, res) => {
   try {
     const userId = oid(req.user.uid);
+    const isSmartFilter = req.query.raw !== '1';
 
     const cutoff = new Date(Date.now() - 15 * 24 * 60 * 60 * 1000);
 
@@ -53,16 +71,52 @@ router.get('/', requireAuth, async (req, res) => {
     // Location filter always applies — even in raw mode
     const locationOk = withState.filter(j => isLocationOk(j.location, prefs));
 
-    if (req.query.raw === '1') {
-      return res.json(locationOk.sort((a, b) => new Date(b.firstSeen) - new Date(a.firstSeen)));
+    // Recency-first ordering contract: verified postedAt beats firstSeen when
+    // confident (>=0.7), otherwise falls back to discovery time — so an
+    // inferred/low-confidence date can't leapfrog a verified one.
+    const byRecency = (a, b) =>
+      new Date(effectivePostedAt(b)) - new Date(effectivePostedAt(a))
+      || (b.postedAtConfidence ?? 0) - (a.postedAtConfidence ?? 0);
+
+    // Personalized match score (utils/jobMatchBatch.js) takes priority over
+    // recency when both jobs being compared have one — a job scored 90 last
+    // week should still outrank an unremarkable job posted an hour ago.
+    // Ranking tiers, highest first:
+    //   1. Jobs with a real semantic (embedding) score — the trustworthy signal
+    //   2. Jobs with only a keyword-fallback score (quota/provider outage) —
+    //      filter.js's keyword lists are known-incomplete, so these can look
+    //      confident (e.g. a neutral ~50) while being wrong; never let one
+    //      outrank a real semantic match regardless of its numeric score
+    //   3. Unscored jobs (not yet reached by the batch pass) — byRecency only
+    const matchTier = (j) => {
+      if (j.matchScore == null) return 0;
+      return j.hasSemanticScore ? 2 : 1;
+    };
+    const byMatchThenRecency = (a, b) => {
+      const tierA = matchTier(a), tierB = matchTier(b);
+      if (tierA !== tierB) return tierB - tierA;
+      if (tierA === 0) return byRecency(a, b); // both unscored
+      return b.matchScore - a.matchScore || byRecency(a, b); // both same tier, real numbers to compare
+    };
+
+    if (!isSmartFilter) {
+      return res.json(locationOk.sort(byMatchThenRecency));
     }
 
+    // Smart filter: tighter recency window, and no backfilling of
+    // already-applied jobs outside it — this view is "recent + best match",
+    // not "everything I've ever touched". Raw/history mode above still shows
+    // the full 15-day set plus applied-job backfill.
+    const smartCutoff = new Date(Date.now() - SMART_FILTER_WINDOW_MS);
+    const smartRecent = locationOk.filter(j => new Date(effectivePostedAt(j)) >= smartCutoff);
+
     const threshold = prefs.scoreThreshold ?? DEFAULTS.scoreThreshold;
-    const jobs = locationOk
+    const jobs = smartRecent
       .filter(j => !isSenior(j.title, prefs))
+      .filter(j => !isInternship(j.title))
       .map(j => ({ ...j, score: scoreJob(j, prefs) }))
       .filter(j => j.score >= threshold)
-      .sort((a, b) => b.score - a.score || new Date(b.firstSeen) - new Date(a.firstSeen));
+      .sort((a, b) => byMatchThenRecency(a, b) || b.score - a.score);
     res.json(jobs);
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -78,6 +132,17 @@ router.get('/sources', async (_req, res) => {
   }
 });
 
+// "Applied" here means the Application actually reached a completed outcome
+// — SUBMITTED (automated) or APPLIED_MANUALLY (user applied outside the
+// tool) — not merely tracked/discovered. Both stamp `applied`/`appliedAt`
+// (see applyProcessor.js and routes/applications.js's POST
+// /:id/applied-manually), which is what this used to read off the legacy
+// UserJobState model before Application superseded it (see models/
+// application.js) — UserJobState was never updated by the real apply
+// pipeline or by the new manual-apply action, so these stats had drifted
+// out of sync with what actually happened.
+const APPLIED_STATUSES = ['SUBMITTED', 'APPLIED_MANUALLY'];
+
 router.get('/stats', requireAuth, async (req, res) => {
   try {
     const userId = oid(req.user.uid);
@@ -87,8 +152,8 @@ router.get('/stats', requireAuth, async (req, res) => {
     const month0 = new Date(day0); month0.setUTCDate(day0.getUTCDate() - 29);
     const day1   = new Date(day0); day1.setUTCDate(day0.getUTCDate() + 1);
 
-    const daily = await UserJobState.aggregate([
-      { $match: { userId, applied: true, appliedAt: { $gte: month0 } } },
+    const daily = await Application.aggregate([
+      { $match: { userId, status: { $in: APPLIED_STATUSES }, appliedAt: { $gte: month0 } } },
       { $group: {
           _id:   { $dateToString: { format: '%Y-%m-%d', date: '$appliedAt' } },
           count: { $sum: 1 },
@@ -96,8 +161,8 @@ router.get('/stats', requireAuth, async (req, res) => {
       { $sort: { _id: 1 } },
     ]);
 
-    const topCompanies = await UserJobState.aggregate([
-      { $match: { userId, applied: true } },
+    const topCompanies = await Application.aggregate([
+      { $match: { userId, status: { $in: APPLIED_STATUSES } } },
       { $lookup: { from: 'jobs', localField: 'jobId', foreignField: '_id', as: 'job' } },
       { $unwind: '$job' },
       { $group: {
@@ -110,13 +175,13 @@ router.get('/stats', requireAuth, async (req, res) => {
       { $limit: 8 },
     ]);
 
-    const [totals] = await UserJobState.aggregate([
+    const [totals] = await Application.aggregate([
       { $match: { userId } },
       { $facet: {
-          applied:   [{ $match: { applied: true } }, { $count: 'n' }],
-          appToday:  [{ $match: { applied: true, appliedAt: { $gte: day0 } } }, { $count: 'n' }],
-          appWeek:   [{ $match: { applied: true, appliedAt: { $gte: week0 } } }, { $count: 'n' }],
-          appMonth:  [{ $match: { applied: true, appliedAt: { $gte: month0 } } }, { $count: 'n' }],
+          applied:   [{ $match: { status: { $in: APPLIED_STATUSES } } }, { $count: 'n' }],
+          appToday:  [{ $match: { status: { $in: APPLIED_STATUSES }, appliedAt: { $gte: day0 } } }, { $count: 'n' }],
+          appWeek:   [{ $match: { status: { $in: APPLIED_STATUSES }, appliedAt: { $gte: week0 } } }, { $count: 'n' }],
+          appMonth:  [{ $match: { status: { $in: APPLIED_STATUSES }, appliedAt: { $gte: month0 } } }, { $count: 'n' }],
       }},
     ]);
 
@@ -147,8 +212,8 @@ router.get('/leaderboard', requireAuth, async (_req, res) => {
 
     const [allUsers, stats] = await Promise.all([
       User.find({}).select('_id name').lean(),
-      UserJobState.aggregate([
-        { $match: { applied: true } },
+      Application.aggregate([
+        { $match: { status: { $in: APPLIED_STATUSES } } },
         { $group: {
             _id:      '$userId',
             total:    { $sum: 1 },
@@ -169,6 +234,29 @@ router.get('/leaderboard', requireAuth, async (_req, res) => {
       .slice(0, 50);
 
     res.json(rows);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /jobs/:id — single job detail, merged with the current user's applied/
+// dismissed state. Does NOT drop dismissed jobs like the list endpoint does
+// (mergeUserState) — a dismissed job's detail page must still be viewable
+// via direct/deep link, only the list view hides it. Declared AFTER the
+// specific routes above (/sources, /stats, /leaderboard) so this wildcard
+// never shadows them.
+router.get('/:id', requireAuth, async (req, res) => {
+  try {
+    const userId = oid(req.user.uid);
+    const job = await Job.findById(req.params.id).lean();
+    if (!job) return res.status(404).json({ error: 'Not found' });
+    const state = await UserJobState.findOne({ userId, jobId: job._id }).lean();
+    res.json({
+      ...job,
+      applied: !!state?.applied,
+      appliedAt: state?.appliedAt ?? null,
+      dismissed: !!state?.dismissed,
+    });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

@@ -18,12 +18,14 @@ module.exports = async (src) => {
   return postings
     .filter(j => j.isListed !== false)
     .map(j => normalize({
-      title:      j.title ?? '',
-      company:    src.company,
-      location:   j.locationName ?? j.location?.name ?? j.location ?? '',
-      department: j.team?.name ?? j.department?.name ?? '',
-      exp:        '',
-      url:        j.jobUrl ?? `https://jobs.ashbyhq.com/${src.ashbySlug}/${j.id}`,
-      date:       new Date(j.publishedAt ?? j.publishedDate ?? Date.now()),
+      title:       j.title ?? '',
+      company:     src.company,
+      location:    j.locationName ?? j.location?.name ?? j.location ?? '',
+      department:  j.team?.name ?? j.department?.name ?? '',
+      exp:         '',
+      url:         j.jobUrl ?? `https://jobs.ashbyhq.com/${src.ashbySlug}/${j.id}`,
+      date:        new Date(j.publishedAt ?? j.publishedDate ?? Date.now()),
+      // descriptionPlain is already plain text — no HTML stripping needed.
+      description: j.descriptionPlain ?? '',
     }));
 };

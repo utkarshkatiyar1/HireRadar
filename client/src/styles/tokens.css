@@ -1,0 +1,220 @@
+/* ══════════════════════════════════════════════════════════════════════════
+   DESIGN TOKENS — "Signal" identity
+   Single source of truth for color, spacing, radius, elevation, and type.
+   Primary/secondary pair validated via the dataviz skill's OKLab palette
+   checker (lightness band, chroma floor, CVD separation, contrast) for both
+   dark and light surfaces — see the design decision log in git history for
+   the exact validator invocations.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+/* No layout on this page is meant to exceed the viewport width — any
+   overflow (calc() rounding on .filter-bar's edge-to-edge bleed, a long
+   unbroken company name, a badge that doesn't wrap) should clip rather than
+   push out a page-wide horizontal scrollbar. */
+html { scroll-padding-top: 24px; overflow-x: hidden; }
+body { overflow-x: hidden; }
+
+:root {
+  /* ── Spacing scale (4px base) ─────────────────────────── */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 32px;
+  --space-8: 40px;
+
+  /* ── Radius scale ─────────────────────────────────────── */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-pill: 999px;
+
+  /* ── Type scale ───────────────────────────────────────── */
+  --text-xs: 0.72rem;
+  --text-sm: 0.82rem;
+  --text-base: 0.92rem;
+  --text-lg: 1.1rem;
+  --text-xl: 1.4rem;
+  --text-2xl: 1.9rem;
+
+  --max-w: 1440px;
+
+  /* ── Dark theme (default) — deep charcoal-navy, warmer than pure black ── */
+  --bg:        #0a0f16;
+  --surface:   #10161f;
+  --elevated:  #161d29;
+  --border:    #232c3a;
+  --border-hi: #34405420;
+  --border-hi: #384258;
+
+  /* Primary: amber/gold — "signal" warmth, the app's core identity color */
+  --primary:      #c47f28;
+  --primary-dim:  rgba(196, 127, 40, 0.14);
+  --primary-glow: rgba(196, 127, 40, 0.28);
+  --primary-ink:  #1a1002; /* text-on-primary for solid-fill buttons */
+
+  /* Secondary: steel-blue — data/structure, pairs with amber at high separation */
+  --secondary:      #4a7fd4;
+  --secondary-dim:  rgba(74, 127, 212, 0.14);
+  --secondary-glow: rgba(74, 127, 212, 0.28);
+
+  /* Status palette — reserved, never reused as a categorical color */
+  --success:      #3fb87f;
+  --success-dim:  rgba(63, 184, 127, 0.13);
+  --warning:      #d9932f;
+  --warning-dim:  rgba(217, 147, 47, 0.13);
+  --danger:       #e0616a;
+  --danger-dim:   rgba(224, 97, 106, 0.13);
+
+  /* Back-compat aliases — existing components reference these names;
+     mapped onto the new identity so nothing needs a mechanical rename pass
+     during this token-formalization step. */
+  --violet:      var(--primary);
+  --violet-dim:  var(--primary-dim);
+  --violet-glow: var(--primary-glow);
+  --teal:        var(--secondary);
+  --teal-dim:    var(--secondary-dim);
+  --teal-glow:   var(--secondary-glow);
+  --orange:      var(--success);
+  --orange-dim:  var(--success-dim);
+  --orange-glow: var(--success-dim);
+  --green:       var(--success);
+  --green-dim:   var(--success-dim);
+  --error-color:  var(--danger);
+  --danger-color: var(--danger);
+
+  --text-1: #eef1f6;
+  --text-2: #9aa6b8;
+  --text-3: #5f6b7f;
+  --text-4: #3a4356;
+
+  --ring: 0 0 0 3px var(--primary-dim);
+
+  --header-bg:     rgba(10, 15, 22, 0.86);
+  --filterbar-bg:  rgba(10, 15, 22, 0.80);
+  --savebar-bg:    rgba(16, 22, 31, 0.94);
+  --header-shadow: none;
+  --tab-hover-bg:  rgba(255, 255, 255, 0.04);
+  --tab-count-bg:  rgba(255, 255, 255, 0.06);
+  --body-grad:     radial-gradient(ellipse 80% 320px at 50% 0, rgba(196, 127, 40, 0.06) 0%, transparent 100%);
+  --selection-bg:  rgba(196, 127, 40, 0.32);
+
+  /* ATS categorical chips — always shown with a text label, so strict
+     mutual CVD separation across all 9 isn't required (color is never the
+     sole identifier); kept as a warm/cool alternating set for visual variety. */
+  --ats-greenhouse:      #3fb87f; --ats-greenhouse-bg:      rgba(63,184,127,.13);
+  --ats-lever:           #d9932f; --ats-lever-bg:           rgba(217,147,47,.13);
+  --ats-workday:         #4a7fd4; --ats-workday-bg:         rgba(74,127,212,.13);
+  --ats-ashby:           #9a7fd4; --ats-ashby-bg:           rgba(154,127,212,.13);
+  --ats-eightfold:       #d477a0; --ats-eightfold-bg:       rgba(212,119,160,.13);
+  --ats-smartrecruiters: #3fb0b8; --ats-smartrecruiters-bg: rgba(63,176,184,.13);
+  --ats-taleo:           #c4a028; --ats-taleo-bg:           rgba(196,160,40,.13);
+  --ats-zohorecruit:     #cc6f3a; --ats-zohorecruit-bg:     rgba(204,111,58,.13);
+  --ats-custom:          #8b96a8; --ats-custom-bg:          rgba(139,150,168,.13);
+}
+
+/* ── Light theme — same warm identity, flooded with light ────────────── */
+:root[data-theme="light"] {
+  --bg:        #f7f5f0;
+  --surface:   #fdfcfa;
+  --elevated:  #eee9e0;
+  --border:    #ddd5c6;
+  --border-hi: #c2b6a0;
+
+  --primary:      #a8631f;
+  --primary-dim:  rgba(168, 99, 31, 0.11);
+  --primary-glow: rgba(168, 99, 31, 0.24);
+  --primary-ink:  #ffffff;
+
+  --secondary:      #3563a8;
+  --secondary-dim:  rgba(53, 99, 168, 0.11);
+  --secondary-glow: rgba(53, 99, 168, 0.24);
+
+  --success:      #1f7a52;
+  --success-dim:  rgba(31, 122, 82, 0.11);
+  --warning:      #a3690f;
+  --warning-dim:  rgba(163, 105, 15, 0.11);
+  --danger:       #c53a44;
+  --danger-dim:   rgba(197, 58, 68, 0.11);
+
+  --violet:      var(--primary);
+  --violet-dim:  var(--primary-dim);
+  --violet-glow: var(--primary-glow);
+  --teal:        var(--secondary);
+  --teal-dim:    var(--secondary-dim);
+  --teal-glow:   var(--secondary-glow);
+  --orange:      var(--success);
+  --orange-dim:  var(--success-dim);
+  --orange-glow: var(--success-dim);
+  --green:       var(--success);
+  --green-dim:   var(--success-dim);
+  --error-color:  var(--danger);
+  --danger-color: var(--danger);
+
+  --text-1: #1c1712;
+  --text-2: #4a4234;
+  --text-3: #7a7160;
+  --text-4: #a89e8c;
+
+  --ring: 0 0 0 3px rgba(168, 99, 31, 0.18);
+
+  --header-bg:     rgba(247, 245, 240, 0.92);
+  --filterbar-bg:  rgba(247, 245, 240, 0.86);
+  --savebar-bg:    rgba(253, 252, 250, 0.97);
+  --header-shadow: 0 1px 0 var(--border), 0 2px 16px rgba(28, 23, 18, 0.06);
+  --tab-hover-bg:  rgba(28, 23, 18, 0.05);
+  --tab-count-bg:  rgba(28, 23, 18, 0.07);
+  --body-grad:     radial-gradient(ellipse 80% 320px at 50% 0, rgba(168, 99, 31, 0.05) 0%, transparent 100%);
+  --selection-bg:  rgba(168, 99, 31, 0.20);
+
+  --ats-greenhouse:      #1f7a52; --ats-greenhouse-bg:      rgba(31,122,82,.10);
+  --ats-lever:           #a3690f; --ats-lever-bg:           rgba(163,105,15,.10);
+  --ats-workday:         #3563a8; --ats-workday-bg:         rgba(53,99,168,.10);
+  --ats-ashby:           #6d569f; --ats-ashby-bg:           rgba(109,86,159,.10);
+  --ats-eightfold:       #9c4a6d; --ats-eightfold-bg:       rgba(156,74,109,.10);
+  --ats-smartrecruiters: #1c7d84; --ats-smartrecruiters-bg: rgba(28,125,132,.10);
+  --ats-taleo:           #8a7018; --ats-taleo-bg:           rgba(138,112,24,.10);
+  --ats-zohorecruit:     #96502a; --ats-zohorecruit-bg:     rgba(150,80,42,.10);
+  --ats-custom:          #5f6b7f; --ats-custom-bg:          rgba(95,107,127,.10);
+}
+
+body {
+  font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  background: var(--body-grad), var(--bg);
+  color: var(--text-1);
+  min-height: 100vh;
+  font-size: 14px;
+  font-feature-settings: 'cv11', 'ss01', 'ss03';
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  display: flex;
+  flex-direction: column;
+}
+
+::selection { background: var(--selection-bg); color: var(--text-1); }
+
+::-webkit-scrollbar         { width: 10px; height: 10px; }
+::-webkit-scrollbar-track   { background: transparent; }
+::-webkit-scrollbar-thumb   { background: var(--border-hi); border-radius: 10px; border: 2px solid var(--bg); }
+::-webkit-scrollbar-thumb:hover { background: var(--primary); }
+
+:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+  border-radius: var(--radius-sm);
+}
+button:focus-visible, a:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--primary);
+}
+
+#root {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
