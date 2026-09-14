@@ -14,6 +14,7 @@ import TerminalPageRoute from './pages/TerminalPageRoute';
 import CandidateProfilePage from './pages/CandidateProfilePage';
 import ResumesPage from './pages/ResumesPage';
 import NaukriScriptPage from './pages/NaukriScriptPage';
+import LinkedinScriptPage from './pages/LinkedinScriptPage';
 import ApprovalQueuePage from './pages/ApprovalQueuePage';
 import ApplicationDetail from './pages/ApplicationDetail';
 import AuditTrailPage from './pages/AuditTrailPage';
@@ -45,6 +46,7 @@ export default function App() {
           )}
           <Route path="/resumes" element={<ResumesPage />} />
           <Route path="/naukri-script" element={<NaukriScriptPage />} />
+          <Route path="/linkedin-script" element={<LinkedinScriptPage />} />
           <Route element={<AdminRoute />}>
             <Route path="/terminal" element={<TerminalPageRoute />} />
           </Route>

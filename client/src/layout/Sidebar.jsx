@@ -60,6 +60,9 @@ export default function Sidebar({ mobileOpen, onCloseMobile }) {
           <NavLink to="/naukri-script" className={linkClass} onClick={onCloseMobile}>
             <span>Naukri Script</span>
           </NavLink>
+          <NavLink to="/linkedin-script" className={linkClass} onClick={onCloseMobile}>
+            <span>LinkedIn Script</span>
+          </NavLink>
           <NavLink to="/pricing" className={linkClass} onClick={onCloseMobile}>
             <span>Pricing</span>
           </NavLink>
