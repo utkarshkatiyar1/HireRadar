@@ -345,11 +345,21 @@ export const NAUKRI_TEMPLATE = `(async () => {
   }
 
   // ============================================================
-  // JOB-ID DATE HEURISTIC
-  // Assumes first 6 digits = DDMMYY
+  // POSTING DATE
+  //
+  // Naukri's API response carries createdDate as a real epoch-ms
+  // timestamp — an exact value, not something to guess at. Earlier
+  // versions of this script tried to decode a posting date from the
+  // first 6 digits of jobId (assuming a DDMMYY encoding) — that only
+  // happened to work for a subset of postings and silently produced
+  // "Unknown"/no-freshness-signal for the rest, even when the job was
+  // definitely old (e.g. footerPlaceholderLabel: "30+ Days Ago").
+  // createdDate replaces that guesswork outright; jobId parsing is
+  // kept only as a last-resort fallback for the rare case createdDate
+  // is missing from the response.
   // ============================================================
 
-  function parseJobIdDate(jobId) {
+  function parseJobIdDateFallback(jobId) {
     const id =
       String(jobId || "");
 
@@ -375,19 +385,6 @@ export const NAUKRI_TEMPLATE = `(async () => {
         id.slice(4, 6)
       );
 
-    const currentYear =
-      new Date().getFullYear();
-
-    // Naukri job-ID dates are always near "today" — a wide static
-    // range (e.g. 2020-2035) lets a garbage parse land on a real
-    // calendar date years off and get trusted as if it were fresh.
-    if (
-      year < currentYear - 1 ||
-      year > currentYear + 1
-    ) {
-      return null;
-    }
-
     const date =
       new Date(
         year,
@@ -403,25 +400,34 @@ export const NAUKRI_TEMPLATE = `(async () => {
       return null;
     }
 
-    // A job can't be posted more than a day or two in the future;
-    // anything further out is a bad parse, not a real posting date.
-    const twoDaysFromNow =
-      new Date();
-
-    twoDaysFromNow.setDate(
-      twoDaysFromNow.getDate() + 2
-    );
-
-    if (date > twoDaysFromNow) {
-      return null;
-    }
-
     return date;
   }
 
-  function getJobIdAge(jobId) {
+  function getPostedDate(job) {
+    const fromCreatedDate =
+      Number(
+        job.createdDate
+      );
+
+    if (
+      Number.isFinite(
+        fromCreatedDate
+      ) &&
+      fromCreatedDate > 0
+    ) {
+      return new Date(
+        fromCreatedDate
+      );
+    }
+
+    return parseJobIdDateFallback(
+      job.jobId
+    );
+  }
+
+  function getPostedAgeDays(job) {
     const date =
-      parseJobIdDate(jobId);
+      getPostedDate(job);
 
     if (!date) {
       return null;
@@ -448,6 +454,8 @@ export const NAUKRI_TEMPLATE = `(async () => {
       today.getTime() -
       posted.getTime();
 
+    // A future-dated posting is a bad value (clock skew, bad fallback
+    // parse) — treat as unknown rather than trusting a negative age.
     if (diff < 0) {
       return null;
     }
@@ -457,11 +465,9 @@ export const NAUKRI_TEMPLATE = `(async () => {
     );
   }
 
-  function formatJobIdDate(
-    jobId
-  ) {
+  function formatPostedDate(job) {
     const date =
-      parseJobIdDate(jobId);
+      getPostedDate(job);
 
     if (!date) {
       return "Unknown";
@@ -1024,9 +1030,12 @@ export const NAUKRI_TEMPLATE = `(async () => {
       return 1;
     }
 
+    // "30+ Days Ago" has a literal "+" between the number and "day" —
+    // without the optional \\+? this silently fails to match and falls
+    // through to the 999 sentinel even though the age is known.
     const match =
       label.match(
-        /(\\d+)\\s*day/
+        /(\\d+)\\+?\\s*day/
       );
 
     return match
@@ -1223,15 +1232,14 @@ export const NAUKRI_TEMPLATE = `(async () => {
     }
 
     // ========================================================
-    // ORIGINAL-DATE HEURISTIC
+    // POSTING DATE — primary freshness gate
     // ========================================================
 
     const jobIdAge =
-      getJobIdAge(
-        job.jobId
+      getPostedAgeDays(
+        job
       );
 
-    // This is now the primary freshness gate.
     if (
       jobIdAge !== null &&
       jobIdAge >
@@ -1240,7 +1248,7 @@ export const NAUKRI_TEMPLATE = `(async () => {
       return {
         rejected: true,
         rejection:
-          "Old by jobId date"
+          "Old by posting date"
       };
     }
 
@@ -1356,7 +1364,7 @@ export const NAUKRI_TEMPLATE = `(async () => {
       score += 20;
 
       reasons.push(
-        "+20 jobId date today"
+        "+20 posted today"
       );
 
     } else if (
@@ -1365,7 +1373,7 @@ export const NAUKRI_TEMPLATE = `(async () => {
       score += 15;
 
       reasons.push(
-        "+15 jobId date yesterday"
+        "+15 posted yesterday"
       );
 
     } else if (
@@ -1374,13 +1382,14 @@ export const NAUKRI_TEMPLATE = `(async () => {
       score += 10;
 
       reasons.push(
-        "+10 jobId date 2d"
+        "+10 posted 2d ago"
       );
 
     } else if (
       jobIdAge === null
     ) {
-      // Safe fallback only when ID can't be parsed.
+      // Safe fallback only when createdDate/jobId both fail to yield
+      // a posting date — falls back to the "X days ago" label text.
       if (
         searchAge === 0
       ) {
@@ -1398,7 +1407,7 @@ export const NAUKRI_TEMPLATE = `(async () => {
       }
 
       reasons.push(
-        "jobId date unavailable; used search freshness fallback"
+        "posting date unavailable; used search freshness fallback"
       );
     }
 
@@ -1429,13 +1438,18 @@ export const NAUKRI_TEMPLATE = `(async () => {
       jobIdAge,
 
       jobIdDateLabel:
-        formatJobIdDate(
-          job.jobId
+        formatPostedDate(
+          job
         ),
 
       freshnessSource:
-        jobIdAge !== null
-          ? "jobId"
+        Number.isFinite(
+          Number(job.createdDate)
+        ) &&
+        Number(job.createdDate) > 0
+          ? "createdDate"
+          : jobIdAge !== null
+          ? "jobId-fallback"
           : "search-api",
 
       ...stackData
