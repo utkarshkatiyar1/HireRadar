@@ -75,7 +75,9 @@ export const NAUKRI_TEMPLATE = `(async () => {
       /\\breact(?:\\.js| js|js)? developer\\b/i,
       /\\breact(?:\\.js| js|js)? engineer\\b/i,
       /\\bnext(?:\\.js| js|js)? developer\\b/i,
-      /\\bnext(?:\\.js| js|js)? engineer\\b/i
+      /\\bnext(?:\\.js| js|js)? engineer\\b/i,
+      /\\btypescript developer\\b/i,
+      /\\btypescript engineer\\b/i
     ],
 
     fullstack: [
@@ -83,6 +85,27 @@ export const NAUKRI_TEMPLATE = `(async () => {
       /\\bfull[- ]?stack developer\\b/i,
       /\\bmern stack developer\\b/i,
       /\\bmern developer\\b/i
+    ],
+
+    // Checked before software/mobile/product: a hybrid title like "AI
+    // Software Engineer" or "AI Product Engineer" would otherwise match
+    // those broader families first (object key order = match order) and
+    // never reach the ai-specific patterns below.
+    ai: [
+      /\\bai product engineer\\b/i,
+      /\\bai software engineer\\b/i,
+      /\\bai application engineer\\b/i,
+      /\\bai engineer\\b/i,
+      /\\bai developer\\b/i,
+      /\\bapplied ai engineer\\b/i,
+      /\\bagentic ai engineer\\b/i,
+      /\\bgenerative ai engineer\\b/i,
+      /\\bgenai engineer\\b/i,
+      /\\bgenai developer\\b/i,
+      /\\bllm engineer\\b/i,
+      /\\bllm developer\\b/i,
+      /\\bllm application engineer\\b/i,
+      /\\bartificial intelligence engineer\\b/i
     ],
 
     software: [
@@ -101,15 +124,6 @@ export const NAUKRI_TEMPLATE = `(async () => {
 
     product: [
       /\\bproduct engineer\\b/i
-    ],
-
-    ai: [
-      /\\bai product engineer\\b/i,
-      /\\bai engineer\\b/i,
-      /\\bagentic ai engineer\\b/i,
-      /\\bgenerative ai engineer\\b/i,
-      /\\bgenai engineer\\b/i,
-      /\\bartificial intelligence engineer\\b/i
     ]
   };
 
@@ -257,7 +271,43 @@ export const NAUKRI_TEMPLATE = `(async () => {
       ]
     ],
 
-    ["FastAPI", 3, [/\\bfastapi\\b/i]]
+    ["FastAPI", 3, [/\\bfastapi\\b/i]],
+
+    ["Python", 8, [/\\bpython\\b/i]],
+
+    ["SQL", 3, [/\\bsql\\b/i]],
+
+    ["Embeddings", 4, [/\\bembeddings?\\b/i]],
+
+    [
+      "Tool Calling",
+      5,
+      [
+        /\\btool calling\\b/i,
+        /\\btool use\\b/i
+      ]
+    ],
+
+    [
+      "Function Calling",
+      5,
+      [/\\bfunction calling\\b/i]
+    ],
+
+    [
+      "Structured Outputs",
+      4,
+      [/\\bstructured outputs?\\b/i]
+    ],
+
+    [
+      "LLM Evaluation",
+      4,
+      [
+        /\\bllm evaluation\\b/i,
+        /\\bevaluation of llms?\\b/i
+      ]
+    ]
   ];
 
   const STACK_PENALTIES = {
@@ -2687,7 +2737,9 @@ export const NAUKRI_PROFILES = [
       "front end developer",
       "react developer",
       "react js developer",
+      "react js engineer",
       "next js developer",
+      "next js engineer",
       "typescript developer",
       "full stack engineer",
       "full stack developer",
@@ -2695,6 +2747,7 @@ export const NAUKRI_PROFILES = [
       "react native developer",
       "software engineer",
       "software developer",
+      "software development engineer",
       "sde 1",
       "sde i"
     ]
@@ -2702,15 +2755,23 @@ export const NAUKRI_PROFILES = [
   {
     id: "agentic-ai-product",
     label: "Agentic AI / Product",
+    // Deliberately excludes "machine learning engineer" / "ml engineer" —
+    // REJECT_TITLE_PATTERNS hard-rejects those titles, so searching for them
+    // would just burn API requests for zero results.
     description: "AI/agent engineering, LLM & product-engineering roles — matches the Agentic AI & Product Engineering resume.",
     searches: [
       "ai engineer",
+      "ai software engineer",
+      "ai developer",
       "agentic ai engineer",
       "generative ai engineer",
-      "ai product engineer",
-      "llm engineer",
       "genai engineer",
-      "machine learning engineer",
+      "genai developer",
+      "ai product engineer",
+      "applied ai engineer",
+      "ai application engineer",
+      "llm engineer",
+      "llm developer",
       "product engineer",
       "software development engineer",
       "software engineer",
