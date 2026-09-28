@@ -4038,18 +4038,36 @@ tbody tr.row-applied:hover td      { background: var(--teal-dim); opacity: 0.8; 
   gap: 10px;
 }
 
+.ns-profile-toggle {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.ns-profile-btn {
+  background: var(--elevated);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-2);
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 7px 14px;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+.ns-profile-btn:hover { border-color: var(--border-hi); color: var(--text-1); }
+.ns-profile-btn.active {
+  background: var(--primary-dim);
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
 .ns-btn-primary {
   background: var(--primary);
   border-color: var(--primary);
   color: var(--primary-ink);
 }
 .ns-btn-primary:hover { border-color: var(--primary); color: var(--primary-ink); opacity: 0.9; }
-
-.ns-notice {
-  font-size: 0.78rem;
-  color: var(--success);
-  min-height: 16px;
-}
 
 .ns-sticky {
   position: sticky;
@@ -4069,3 +4087,47 @@ tbody tr.row-applied:hover td      { background: var(--teal-dim); opacity: 0.8; 
   white-space: pre;
   font-family: 'JetBrains Mono', 'SF Mono', Consolas, Menlo, monospace;
 }
+
+/* ── Toasts (Toast.jsx) ── */
+.toast-stack {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: min(360px, calc(100vw - 40px));
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--elevated);
+  border: 1px solid var(--border-hi);
+  border-radius: 10px;
+  padding: 11px 14px;
+  font-size: 0.82rem;
+  color: var(--text-1);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  cursor: pointer;
+  animation: toast-in 0.18s ease-out;
+}
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.toast-icon {
+  flex-shrink: 0;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.toast-success .toast-icon { color: var(--success); }
+.toast-error .toast-icon { color: var(--danger); }
+.toast-info .toast-icon { color: var(--secondary); }
+
+.toast-message { flex: 1; line-height: 1.4; }

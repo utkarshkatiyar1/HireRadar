@@ -1,7 +1,9 @@
 import { useState, useMemo } from 'react';
-import { NAUKRI_TEMPLATE, DEFAULT_NAUKRI_CONFIG } from '../config/naukriScriptTemplate';
+import { NAUKRI_TEMPLATE, DEFAULT_NAUKRI_CONFIG, NAUKRI_PROFILES, DEFAULT_NAUKRI_PROFILE_ID } from '../config/naukriScriptTemplate';
+import { useToasts, ToastStack } from '../components/Toast';
 
 const STORAGE_KEY = 'hireradar.naukriScript.config.v1';
+const PROFILE_STORAGE_KEY = 'hireradar.naukriScript.profileId.v1';
 
 function linesToArray(text) {
   return text.split('\n').map(line => line.trim()).filter(Boolean);
@@ -15,6 +17,15 @@ function loadStoredConfig() {
   } catch {
     return null;
   }
+}
+
+function loadStoredProfileId() {
+  const raw = localStorage.getItem(PROFILE_STORAGE_KEY);
+  return NAUKRI_PROFILES.some(p => p.id === raw) ? raw : DEFAULT_NAUKRI_PROFILE_ID;
+}
+
+function getProfile(id) {
+  return NAUKRI_PROFILES.find(p => p.id === id) || NAUKRI_PROFILES[0];
 }
 
 function jsArrayLiteral(arr) {
@@ -37,25 +48,33 @@ function generateScript(cfg) {
     .replace('__EXCLUDED_COMPANIES__', jsArrayLiteral(cfg.excludedCompanies));
 }
 
+function sharedFormFromConfig(stored) {
+  return {
+    myExperience: String(stored.myExperience),
+    maxMinimumExperience: String(stored.maxMinimumExperience),
+    searchExperience: String(stored.searchExperience),
+    maxActualAgeDays: String(stored.maxActualAgeDays),
+    minScore: String(stored.minScore),
+    concurrency: String(stored.concurrency),
+    pagesPerSearch: String(stored.pagesPerSearch),
+    resultsPerPage: String(stored.resultsPerPage),
+    batchDelayMs: String(stored.batchDelayMs ?? DEFAULT_NAUKRI_CONFIG.batchDelayMs),
+    locations: stored.locations.join('\n'),
+    excludedCompanies: stored.excludedCompanies.join('\n'),
+  };
+}
+
 export default function NaukriScriptPage() {
-  const [form, setForm] = useState(() => {
-    const stored = loadStoredConfig() || DEFAULT_NAUKRI_CONFIG;
-    return {
-      myExperience: String(stored.myExperience),
-      maxMinimumExperience: String(stored.maxMinimumExperience),
-      searchExperience: String(stored.searchExperience),
-      maxActualAgeDays: String(stored.maxActualAgeDays),
-      minScore: String(stored.minScore),
-      concurrency: String(stored.concurrency),
-      pagesPerSearch: String(stored.pagesPerSearch),
-      resultsPerPage: String(stored.resultsPerPage),
-      batchDelayMs: String(stored.batchDelayMs ?? DEFAULT_NAUKRI_CONFIG.batchDelayMs),
-      locations: stored.locations.join('\n'),
-      searches: stored.searches.join('\n'),
-      excludedCompanies: stored.excludedCompanies.join('\n'),
-    };
+  const { toasts, showToast, dismiss } = useToasts();
+
+  const [profileId, setProfileId] = useState(loadStoredProfileId);
+  const [form, setForm] = useState(() => sharedFormFromConfig(loadStoredConfig() || DEFAULT_NAUKRI_CONFIG));
+  const [searchesText, setSearchesText] = useState(() => {
+    const stored = loadStoredConfig();
+    // Prefer whatever was hand-edited/saved last time; only fall back to the
+    // profile's preset keywords if nothing has ever been saved.
+    return stored ? stored.searches.join('\n') : getProfile(loadStoredProfileId()).searches.join('\n');
   });
-  const [notice, setNotice] = useState('');
 
   const cfg = useMemo(() => ({
     myExperience: Number(form.myExperience) || 0,
@@ -68,48 +87,39 @@ export default function NaukriScriptPage() {
     resultsPerPage: Number(form.resultsPerPage) || 20,
     batchDelayMs: Number(form.batchDelayMs) || 0,
     locations: linesToArray(form.locations),
-    searches: linesToArray(form.searches),
+    searches: linesToArray(searchesText),
     excludedCompanies: linesToArray(form.excludedCompanies),
-  }), [form]);
+  }), [form, searchesText]);
 
   const script = useMemo(() => generateScript(cfg), [cfg]);
+  const activeProfile = getProfile(profileId);
 
   const set = (key) => (e) => setForm(f => ({ ...f, [key]: e.target.value }));
 
-  const flash = (msg) => {
-    setNotice(msg);
-    setTimeout(() => setNotice(''), 2200);
+  const handleProfileChange = (id) => {
+    setProfileId(id);
+    localStorage.setItem(PROFILE_STORAGE_KEY, id);
+    setSearchesText(getProfile(id).searches.join('\n'));
+    showToast(`Switched to "${getProfile(id).label}" — search keywords updated.`, { tone: 'info' });
   };
 
   const handleSave = () => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(cfg));
-    flash('✓ Saved locally');
+    showToast('Config saved locally.');
   };
 
   const handleReset = () => {
-    setForm({
-      myExperience: String(DEFAULT_NAUKRI_CONFIG.myExperience),
-      maxMinimumExperience: String(DEFAULT_NAUKRI_CONFIG.maxMinimumExperience),
-      searchExperience: String(DEFAULT_NAUKRI_CONFIG.searchExperience),
-      maxActualAgeDays: String(DEFAULT_NAUKRI_CONFIG.maxActualAgeDays),
-      minScore: String(DEFAULT_NAUKRI_CONFIG.minScore),
-      concurrency: String(DEFAULT_NAUKRI_CONFIG.concurrency),
-      pagesPerSearch: String(DEFAULT_NAUKRI_CONFIG.pagesPerSearch),
-      resultsPerPage: String(DEFAULT_NAUKRI_CONFIG.resultsPerPage),
-      batchDelayMs: String(DEFAULT_NAUKRI_CONFIG.batchDelayMs),
-      locations: DEFAULT_NAUKRI_CONFIG.locations.join('\n'),
-      searches: DEFAULT_NAUKRI_CONFIG.searches.join('\n'),
-      excludedCompanies: DEFAULT_NAUKRI_CONFIG.excludedCompanies.join('\n'),
-    });
-    flash('Reset to defaults (not saved yet)');
+    setForm(sharedFormFromConfig(DEFAULT_NAUKRI_CONFIG));
+    setSearchesText(activeProfile.searches.join('\n'));
+    showToast('Reset to defaults — not saved yet.', { tone: 'info' });
   };
 
   const handleCopy = async () => {
     try {
       await navigator.clipboard.writeText(script);
-      flash('✓ Copied to clipboard');
+      showToast(`Copied "${activeProfile.label}" script to clipboard — paste it into the console on the matching Naukri profile.`);
     } catch {
-      flash('Copy failed — select manually');
+      showToast('Copy failed — select the script text manually.', { tone: 'error' });
     }
   };
 
@@ -118,11 +128,12 @@ export default function NaukriScriptPage() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'naukri-power-search.js';
+    a.download = `naukri-power-search-${activeProfile.id}.js`;
     document.body.appendChild(a);
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
+    showToast(`Downloaded naukri-power-search-${activeProfile.id}.js`);
   };
 
   return (
@@ -141,6 +152,33 @@ export default function NaukriScriptPage() {
 
         <div className="ns-layout">
           <div className="ns-config-col">
+            <div className="profile-section">
+              <div className="profile-section-top">
+                <span className="profile-section-icon">🧑‍💼</span>
+                <div className="profile-section-meta">
+                  <div className="profile-section-title">Naukri profile</div>
+                  <div className="profile-section-desc">
+                    You've got two Naukri logins, each with a different resume. Everything below
+                    (experience, freshness, locations, excluded companies) is shared — only the
+                    search keywords switch per profile.
+                  </div>
+                </div>
+              </div>
+              <div className="ns-profile-toggle">
+                {NAUKRI_PROFILES.map(p => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    className={`ns-profile-btn${p.id === profileId ? ' active' : ''}`}
+                    onClick={() => handleProfileChange(p.id)}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+              <div className="profile-section-desc">{activeProfile.description}</div>
+            </div>
+
             <div className="profile-section">
               <div className="profile-section-top">
                 <span className="profile-section-icon">🎯</span>
@@ -218,11 +256,11 @@ export default function NaukriScriptPage() {
               <div className="profile-section-top">
                 <span className="profile-section-icon">🔎</span>
                 <div className="profile-section-meta">
-                  <div className="profile-section-title">Search keywords</div>
-                  <div className="profile-section-desc">One per line. Each becomes a separate Naukri search.</div>
+                  <div className="profile-section-title">Search keywords — {activeProfile.label}</div>
+                  <div className="profile-section-desc">One per line. Each becomes a separate Naukri search. Switching profiles above replaces this list with that profile's preset.</div>
                 </div>
               </div>
-              <textarea className="cpf-textarea" rows={12} value={form.searches} onChange={set('searches')} />
+              <textarea className="cpf-textarea" rows={12} value={searchesText} onChange={e => setSearchesText(e.target.value)} />
             </div>
 
             <div className="profile-section">
@@ -230,7 +268,7 @@ export default function NaukriScriptPage() {
                 <span className="profile-section-icon">🚫</span>
                 <div className="profile-section-meta">
                   <div className="profile-section-title">Excluded companies</div>
-                  <div className="profile-section-desc">One per line. Case-insensitive substring match.</div>
+                  <div className="profile-section-desc">One per line. Word-boundary match.</div>
                 </div>
               </div>
               <textarea className="cpf-textarea" rows={6} value={form.excludedCompanies} onChange={set('excludedCompanies')} />
@@ -240,7 +278,6 @@ export default function NaukriScriptPage() {
               <button className="tag-add-btn" onClick={handleReset}>Reset to defaults</button>
               <button className="tag-add-btn ns-btn-primary" onClick={handleSave}>Save config</button>
             </div>
-            {notice && <div className="ns-notice">{notice}</div>}
           </div>
 
           <div className="ns-output-col">
@@ -248,12 +285,12 @@ export default function NaukriScriptPage() {
               <div className="profile-section-top">
                 <span className="profile-section-icon">📜</span>
                 <div className="profile-section-meta">
-                  <div className="profile-section-title">Generated script</div>
+                  <div className="profile-section-title">Generated script — {activeProfile.label}</div>
                   <div className="profile-section-desc">
                     Paste this into the browser console on{' '}
                     <a href="https://www.naukri.com/mnjuser/homepage" target="_blank" rel="noopener noreferrer">naukri.com</a>{' '}
-                    while logged in. It'll ask you to paste a "Copy as fetch" of the{' '}
-                    <code>jobapi/v3/search</code> network request for auth.
+                    while logged into your <strong>{activeProfile.label}</strong> profile. It'll ask you
+                    to paste a "Copy as fetch" of the <code>jobapi/v3/search</code> network request for auth.
                   </div>
                 </div>
               </div>
@@ -266,6 +303,7 @@ export default function NaukriScriptPage() {
           </div>
         </div>
       </div>
+      <ToastStack toasts={toasts} dismiss={dismiss} />
     </main>
   );
 }

@@ -2670,6 +2670,58 @@ export const NAUKRI_TEMPLATE = `(async () => {
 })();
 `;
 
+// Two Naukri accounts, each logged in under a different resume/persona —
+// the search keywords are the only thing that should differ between them
+// (per user: "experience, excluded companies etc should remain same, just
+// one should be for Frontend/FullStck specific searches, other for AI
+// Ones"). Everything else in DEFAULT_NAUKRI_CONFIG is shared; a profile
+// selection in the UI swaps only cfg.searches to the matching preset below.
+export const NAUKRI_PROFILES = [
+  {
+    id: "frontend-fullstack",
+    label: "Frontend / Full-Stack",
+    description: "React, Next.js, React Native, full-stack roles — matches the Frontend/Full-Stack Engineer resume.",
+    searches: [
+      "frontend engineer",
+      "frontend developer",
+      "front end developer",
+      "react developer",
+      "react js developer",
+      "next js developer",
+      "typescript developer",
+      "full stack engineer",
+      "full stack developer",
+      "mern stack developer",
+      "react native developer",
+      "software engineer",
+      "software developer",
+      "sde 1",
+      "sde i"
+    ]
+  },
+  {
+    id: "agentic-ai-product",
+    label: "Agentic AI / Product",
+    description: "AI/agent engineering, LLM & product-engineering roles — matches the Agentic AI & Product Engineering resume.",
+    searches: [
+      "ai engineer",
+      "agentic ai engineer",
+      "generative ai engineer",
+      "ai product engineer",
+      "llm engineer",
+      "genai engineer",
+      "machine learning engineer",
+      "product engineer",
+      "software development engineer",
+      "software engineer",
+      "sde 1",
+      "sde i"
+    ]
+  }
+];
+
+export const DEFAULT_NAUKRI_PROFILE_ID = NAUKRI_PROFILES[0].id;
+
 export const DEFAULT_NAUKRI_CONFIG = {
   myExperience: 2.5,
   maxMinimumExperience: 3,

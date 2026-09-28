@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { LINKEDIN_TEMPLATE, DEFAULT_LINKEDIN_CONFIG } from '../config/linkedinScriptTemplate';
+import { useToasts, ToastStack } from '../components/Toast';
 
 const STORAGE_KEY = 'hireradar.linkedinScript.config.v1';
 
@@ -64,8 +65,8 @@ function toFormState(cfg) {
 }
 
 export default function LinkedinScriptPage() {
+  const { toasts, showToast, dismiss } = useToasts();
   const [form, setForm] = useState(() => toFormState(loadStoredConfig() || DEFAULT_LINKEDIN_CONFIG));
-  const [notice, setNotice] = useState('');
 
   const cfg = useMemo(() => ({
     maxAgeHours: Number(form.maxAgeHours) || 0,
@@ -95,27 +96,22 @@ export default function LinkedinScriptPage() {
     });
   };
 
-  const flash = (msg) => {
-    setNotice(msg);
-    setTimeout(() => setNotice(''), 2200);
-  };
-
   const handleSave = () => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(cfg));
-    flash('✓ Saved locally');
+    showToast('Config saved locally.');
   };
 
   const handleReset = () => {
     setForm(toFormState(DEFAULT_LINKEDIN_CONFIG));
-    flash('Reset to defaults (not saved yet)');
+    showToast('Reset to defaults — not saved yet.', { tone: 'info' });
   };
 
   const handleCopy = async () => {
     try {
       await navigator.clipboard.writeText(script);
-      flash('✓ Copied to clipboard');
+      showToast('Copied script to clipboard — paste it into the console on linkedin.com/jobs/search.');
     } catch {
-      flash('Copy failed — select manually');
+      showToast('Copy failed — select the script text manually.', { tone: 'error' });
     }
   };
 
@@ -129,6 +125,7 @@ export default function LinkedinScriptPage() {
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
+    showToast('Downloaded linkedin-power-search.js');
   };
 
   return (
@@ -259,7 +256,6 @@ export default function LinkedinScriptPage() {
               <button className="tag-add-btn" onClick={handleReset}>Reset to defaults</button>
               <button className="tag-add-btn ns-btn-primary" onClick={handleSave}>Save config</button>
             </div>
-            {notice && <div className="ns-notice">{notice}</div>}
           </div>
 
           <div className="ns-output-col">
@@ -286,6 +282,7 @@ export default function LinkedinScriptPage() {
           </div>
         </div>
       </div>
+      <ToastStack toasts={toasts} dismiss={dismiss} />
     </main>
   );
 }
