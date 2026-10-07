@@ -1507,147 +1507,81 @@ export const NAUKRI_TEMPLATE = `(async () => {
   }
 
   // ============================================================
-  // FILTER / SCORE
+  // ENRICH (NO FILTERING) + SORT BY RECENCY
   // ============================================================
 
-  const scored = [];
-
-  const rejectionStats =
-    {};
-
-  for (
-    const job
-    of jobs
-  ) {
+  function enrichJob(job) {
     const result =
       scoreJob(job);
 
-    if (
-      result.rejected
-    ) {
-      rejectionStats[
-        result.rejection
-      ] =
-        (
-          rejectionStats[
-            result.rejection
-          ] || 0
-        ) + 1;
-
-      continue;
+    if (!result.rejected) {
+      return {
+        ...job,
+        ...result
+      };
     }
 
-    const merged = {
+    // scoreJob rejected it — still keep the job, just fill the
+    // fields the UI reads.
+    const stackData =
+      getStackData(job);
+
+    return {
       ...job,
-      ...result
+
+      score: 0,
+      reasons: [
+        result.rejection
+      ],
+
+      roleFamily:
+        getRoleFamily(
+          normalize(job.title)
+        ) || "software",
+
+      minExp:
+        Number(
+          job.minimumExperience ??
+          99
+        ),
+
+      maxExp:
+        Number(
+          job.maximumExperience ??
+          99
+        ),
+
+      searchAge:
+        getSearchAge(job),
+
+      jobIdAge:
+        getPostedAgeDays(job),
+
+      jobIdDateLabel:
+        formatPostedDate(job),
+
+      freshnessSource:
+        Number(job.createdDate) > 0
+          ? "createdDate"
+          : "search-api",
+
+      ...stackData
     };
-
-    if (
-      merged.score <
-      CONFIG.minScore
-    ) {
-      rejectionStats[
-        "Low score"
-      ] =
-        (
-          rejectionStats[
-            "Low score"
-          ] || 0
-        ) + 1;
-
-      continue;
-    }
-
-    scored.push(
-      merged
-    );
   }
-
-  console.log(
-    "🗑 Rejections:",
-    rejectionStats
-  );
-
-  // ============================================================
-  // SECOND DEDUPE — COMPANY + TITLE
-  // ============================================================
-
-  const companyTitleMap =
-    new Map();
-
-  function normalizedTitleKey(
-    title
-  ) {
-    return normalize(title)
-      .replace(
-        /\\bsenior\\b/g,
-        ""
-      )
-      .replace(
-        /\\bsr\\.?\\b/g,
-        ""
-      )
-      .replace(
-        /\\bjunior\\b/g,
-        ""
-      )
-      .replace(
-        /\\bjr\\.?\\b/g,
-        ""
-      )
-      .replace(
-        /\\s+/g,
-        " "
-      )
-      .trim();
-  }
-
-  for (
-    const job
-    of scored
-  ) {
-    const key =
-      \`\${normalize(
-        job.companyName
-      )}::\${normalizedTitleKey(
-        job.title
-      )}\`;
-
-    const existing =
-      companyTitleMap.get(
-        key
-      );
-
-    if (
-      !existing ||
-      job.score >
-        existing.score
-    ) {
-      companyTitleMap.set(
-        key,
-        job
-      );
-    }
-  }
-
-  // ============================================================
-  // FINAL SORT
-  // ============================================================
 
   const finalJobs =
-    [
-      ...companyTitleMap.values()
-    ]
+    jobs
+      .map(enrichJob)
       .sort(
         (a, b) => {
-          if (
-            b.score !==
-            a.score
-          ) {
-            return (
-              b.score -
-              a.score
-            );
+          const aDate =
+            Number(a.createdDate) || 0;
+
+          const bDate =
+            Number(b.createdDate) || 0;
+
+          if (aDate !== bDate) {
+            return bDate - aDate;
           }
 
           return (
