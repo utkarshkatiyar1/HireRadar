@@ -1,0 +1,82 @@
+[
+  {
+    "title": "Software Engineer - Frontend, Performance and Monitoring",
+    "company": "Postman",
+    "location": "Bengaluru, Karnataka, India",
+    "exp": "",
+    "department": "Engineering",
+    "expected": { "eligibilityPassed": true, "fitScoreAtLeast": 40 }
+  },
+  {
+    "title": "Software Engineer (Fullstack, frontend-heavy), Product Trust",
+    "company": "Postman",
+    "location": "Bengaluru, Karnataka, India",
+    "exp": "",
+    "department": "Engineering",
+    "expected": { "eligibilityPassed": true, "fitScoreAtLeast": 40 }
+  },
+  {
+    "title": "Senior Software Engineer-Full Stack",
+    "company": "PayPal",
+    "location": "Bangalore, Karnataka, India",
+    "exp": "",
+    "department": "Engineering",
+    "expected": { "eligibilityPassed": false, "reasonContains": "senior" }
+  },
+  {
+    "title": "Senior Software Engineer - Backend (Java)",
+    "company": "PayPal",
+    "location": "Bangalore, Karnataka, India",
+    "exp": "",
+    "department": "Engineering",
+    "expected": { "eligibilityPassed": false, "reasonContains": "senior" }
+  },
+  {
+    "title": "Software Engineer : React Native",
+    "company": "PhonePe",
+    "location": "Bengaluru",
+    "exp": "",
+    "department": "Engineering",
+    "expected": { "eligibilityPassed": true, "fitScoreAtLeast": 40 }
+  },
+  {
+    "title": "Account Development Representative",
+    "company": "Postman",
+    "location": "Austin, Texas, United States",
+    "exp": "",
+    "department": "Sales",
+    "expected": { "eligibilityPassed": false, "reasonContains": "Location" }
+  },
+  {
+    "title": "Data Scientist",
+    "company": "SomeCo",
+    "location": "Bangalore, India",
+    "exp": "",
+    "department": "Data",
+    "expected": { "eligibilityPassed": false, "reasonContains": "senior" }
+  },
+  {
+    "title": "Frontend Engineer",
+    "company": "SomeStartup",
+    "location": "Remote",
+    "exp": "2 years",
+    "department": "Engineering",
+    "expected": { "eligibilityPassed": true, "fitScoreAtLeast": 40 }
+  },
+  {
+    "title": "Java Backend Developer",
+    "company": "SomeCorp",
+    "location": "Bangalore, India",
+    "exp": "3 years",
+    "department": "Engineering",
+    "expected": { "eligibilityPassed": true, "fitScoreAtLeast": 0 }
+  },
+  {
+    "title": "Junior Frontend Developer",
+    "company": "SmallStartup",
+    "location": "Hyderabad, India",
+    "exp": "0-1 years",
+    "department": "Engineering",
+    "expected": { "eligibilityPassed": true, "fitScoreAtLeast": 40 }
+  }
+]

@@ -2,8 +2,20 @@ require('dotenv').config();
 const { connect, Job, Source } = require('./utils/db');
 const { scrapeFilter } = require('./utils/filter');
 const { DEFAULTS } = require('./config/sources');
+const { identityHash, contentHash } = require('./utils/canonicalize');
+const { derivePostedAt } = require('./utils/recency');
+
+const SOURCE_TYPE_SCRAPER = {
+  JSON_LD:      './scrapers/sources/json-ld',
+  RSS:          './scrapers/sources/rss',
+  SITEMAP:      './scrapers/sources/sitemap',
+  GENERIC_HTML: './scrapers/sources/generic-html',
+};
 
 const loadScraper = (src) => {
+  if (SOURCE_TYPE_SCRAPER[src.sourceType]) {
+    return require(SOURCE_TYPE_SCRAPER[src.sourceType]);
+  }
   if (src.ats === 'custom-api' || src.ats === 'playwright') {
     return require(`./scrapers/custom/${src.scraperModule}`);
   }
@@ -53,21 +65,72 @@ const scrapeOne = async (src) => {
   }
 
   const now = new Date();
-  const ops = matched.map(j => ({
-    updateOne: {
-      filter: { url: j.url },
-      update: {
-        $setOnInsert: { ...j, ats: src.ats, atsSearched: false, firstSeen: now },
-        $set:         { lastSeen: now },
+
+  // Look up existing content hashes (by URL, the still-primary dedup key) so we can
+  // tell a byte-identical repeat apart from a genuinely refreshed posting.
+  const existing = await Job.find(
+    { url: { $in: matched.map(j => j.url) } },
+    { url: 1, contentHash: 1 }
+  ).lean();
+  const existingByUrl = new Map(existing.map(e => [e.url, e]));
+
+  const ops = matched.map(j => {
+    const idHash = identityHash(j);
+    const cHash  = contentHash(j);
+    const prior  = existingByUrl.get(j.url);
+    // New source-type scrapers (json-ld/rss/sitemap) attach a _postedAtHint with
+    // an explicit extraction source; existing ATS scrapers only ever set `date`
+    // from their own API response, which we treat as API-confidence.
+    const hint = j._postedAtHint
+      || (j.date instanceof Date && !isNaN(j.date) ? { date: j.date, source: 'API' } : null);
+    const { postedAt, postedAtConfidence, postedAtSource } = derivePostedAt({ hint, now });
+    delete j._postedAtHint;
+    const isRefresh = prior && prior.contentHash && prior.contentHash !== cHash;
+
+    return {
+      updateOne: {
+        filter: { url: j.url },
+        update: {
+          $setOnInsert: {
+            ...j,
+            ats: src.ats,
+            atsSearched: false,
+            firstSeen: now,
+            firstSeenAt: now,
+            postedAt,
+            postedAtConfidence,
+            postedAtSource,
+          },
+          $set: {
+            lastSeen: now,
+            lastSeenAt: now,
+            identityHash: idHash,
+            contentHash: cHash,
+            ...(isRefresh ? { status: 'REFRESHED', refreshedAt: now } : {}),
+          },
+        },
+        upsert: true,
       },
-      upsert: true,
-    },
-  }));
+    };
+  });
 
   const result = await Job.bulkWrite(ops, { ordered: false });
   const saved  = result.upsertedCount ?? 0;
+  // New OR refreshed job ids — the set discovery should actually look at,
+  // rather than rescanning the whole Job collection every cycle.
+  const upsertedIds = Object.values(result.upsertedIds || {});
+  const refreshedIds = matched
+    .filter(j => {
+      const prior = existingByUrl.get(j.url);
+      return prior && prior.contentHash && prior.contentHash !== contentHash(j);
+    })
+    .map(j => existingByUrl.get(j.url)?._id)
+    .filter(Boolean);
   await updateSourceHealth(src.company, { jobCount: matched.length, failed: false });
-  return { company: src.company, ats: src.ats, saved, matched: matched.length, failed: false };
+  return {
+    company: src.company, ats: src.ats, saved, matched: matched.length, failed: false,
+    newOrRefreshedJobIds: [...upsertedIds, ...refreshedIds],
+  };
 };
 
 // ─── Terminal progress reporter ───────────────────────────────────────────────
@@ -170,6 +233,10 @@ const ATS_CONCURRENCY = {
   zohorecruit:     5,
   'custom-api':    5,
   playwright:      1,
+  'json-ld':       5,
+  rss:             5,
+  sitemap:         5,
+  'generic-html':  3,
 };
 const GLOBAL_CONCURRENCY = 20;
 
@@ -205,9 +272,14 @@ const scrapeInBatches = async () => {
   // One semaphore per ATS type + one global cap
   const atsSems    = {};
   const globalSem  = new Semaphore(GLOBAL_CONCURRENCY);
+  const newOrRefreshedJobIds = [];
+
+  const NEW_SOURCE_TYPE_KEY = {
+    JSON_LD: 'json-ld', RSS: 'rss', SITEMAP: 'sitemap', GENERIC_HTML: 'generic-html',
+  };
 
   const run = async (src) => {
-    const atsKey = src.ats in ATS_CONCURRENCY ? src.ats : 'custom-api';
+    const atsKey = NEW_SOURCE_TYPE_KEY[src.sourceType] || (src.ats in ATS_CONCURRENCY ? src.ats : 'custom-api');
     if (!atsSems[atsKey]) atsSems[atsKey] = new Semaphore(ATS_CONCURRENCY[atsKey] ?? 5);
 
     await globalSem.acquire();
@@ -215,6 +287,7 @@ const scrapeInBatches = async () => {
     try {
       const r = await scrapeOne(src);
       reporter.tick(r);
+      if (r.newOrRefreshedJobIds?.length) newOrRefreshedJobIds.push(...r.newOrRefreshedJobIds);
     } catch {
       reporter.tick({ company: src.company, ats: src.ats, saved: 0, failed: true });
     } finally {
@@ -225,12 +298,29 @@ const scrapeInBatches = async () => {
 
   await Promise.allSettled(sources.map(src => run(src)));
   reporter.summary();
+  return newOrRefreshedJobIds;
 };
 
 const scrape = async () => {
   const ts = new Date().toISOString();
   console.log(`\n  ┄┄ scrape triggered ${ts}`);
-  await scrapeInBatches();
+  const newOrRefreshedJobIds = await scrapeInBatches();
+
+  // Event-driven Application creation — fires once, right after scrape
+  // completes, scoped to only the jobs that actually changed this cycle.
+  // Never triggered from a GET request (see utils/applicationDiscovery.js).
+  if (newOrRefreshedJobIds.length) {
+    try {
+      const { discoverApplicationsForAllUsers } = require('./utils/applicationDiscovery');
+      const { applicationsCreated } = await discoverApplicationsForAllUsers({ sinceJobIds: newOrRefreshedJobIds });
+      if (applicationsCreated > 0) {
+        console.log(`  [discovery] created ${applicationsCreated} new Application candidate(s)`);
+      }
+    } catch (e) {
+      // Discovery failures should never fail the scrape itself.
+      console.error('  [discovery] failed:', e.message);
+    }
+  }
 };
 
 module.exports = scrape;

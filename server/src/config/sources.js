@@ -211,6 +211,7 @@ const sources = [
   { company: 'ServiceNow', ats: 'smartrecruiters', smartrecruitersSlug: 'ServiceNow' },
 
   // ── Lever ─────────────────────────────────────────────────────────────────
+  { company: 'Binance',   ats: 'lever', leverToken: 'binance'   },
   { company: 'Meesho',    ats: 'lever', leverToken: 'meesho'    },
   { company: 'CRED',      ats: 'lever', leverToken: 'cred'      },
   { company: 'Spotify',   ats: 'lever', leverToken: 'spotify'   },

@@ -25,12 +25,14 @@ module.exports = async (src) => {
   return jobs
     .filter(j => j.Publish !== false && j.Is_Locked !== true)
     .map(j => normalize({
-      title:      j.Posting_Title   ?? j.Job_Opening_Name ?? '',
-      company:    src.company,
-      location:   [j.City, j.State, j.Country].filter(Boolean).join(', '),
-      department: j.Department      ?? '',
-      exp:        j.Experience      ?? '',
-      url:        j['$url']         ?? `https://${subdomain}.zohorecruit.${tld}/jobs/${pagename}`,
-      date:       j.Date_Opened ? new Date(j.Date_Opened) : new Date(),
+      title:       j.Posting_Title   ?? j.Job_Opening_Name ?? '',
+      company:     src.company,
+      location:    [j.City, j.State, j.Country].filter(Boolean).join(', '),
+      department:  j.Department      ?? '',
+      exp:         j.Experience      ?? '',
+      url:         j['$url']         ?? `https://${subdomain}.zohorecruit.${tld}/jobs/${pagename}`,
+      date:        j.Date_Opened ? new Date(j.Date_Opened) : new Date(),
+      // Job_Description is already plain text — no HTML stripping needed.
+      description: j.Job_Description ?? '',
     }));
 };

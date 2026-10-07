@@ -5,6 +5,12 @@ const { SECRET } = require('../middleware/auth');
 const { subscribe, getBuffer, clearBuffer, ADMIN_EMAIL } = require('../utils/logger');
 const { Source } = require('../utils/db');
 const { DEFAULTS } = require('../config/sources');
+const PipelineConfig = require('../models/pipelineConfig');
+const { Application } = require('../models/application');
+const { transition, InvalidTransitionError } = require('../utils/applicationState');
+const { retryFailedApplication } = require('../utils/retryFailedApplication');
+const { IN_FLIGHT_STATUSES } = require('../queue/stuckRecovery');
+const { getPipelineQueue, getApplyQueue } = require('../queue/queues');
 
 let scrapeRunning = false;
 
@@ -73,6 +79,108 @@ router.post('/scrape', requireAdmin, async (req, res) => {
 // GET /admin/scrape — check if scrape is running
 router.get('/scrape', requireAdmin, (_req, res) => {
   res.json({ running: scrapeRunning });
+});
+
+// GET /admin/queues — BullMQ job counts per queue (admin only). Diagnostic:
+// lets you tell "worker is down" apart from "jobs never reached this Redis".
+router.get('/queues', requireAdmin, async (_req, res) => {
+  try {
+    const { getPipelineQueue, getInspectionQueue, getApplyQueue } = require('../queue/queues');
+    const queues = { pipeline: getPipelineQueue(), inspection: getInspectionQueue(), apply: getApplyQueue() };
+    const counts = {};
+    for (const [name, q] of Object.entries(queues)) {
+      counts[name] = await q.getJobCounts('waiting', 'active', 'completed', 'failed', 'delayed');
+    }
+    res.json(counts);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /admin/applications/requeue-stuck — re-enqueues 'evaluate' jobs for
+// every Application still sitting in DISCOVERED. Recovery tool for the case
+// where discoverApplicationsForUser's insertMany succeeded but the follow-up
+// per-doc queue.add loop was interrupted (e.g. request timeout on a large
+// batch) — DISCOVERED docs exist with no matching BullMQ job ever created.
+// runEvaluation() no-ops for anything not still DISCOVERED, so re-adding a
+// job for an application some other in-flight job already advanced is safe.
+router.post('/applications/requeue-stuck', requireAdmin, async (req, res) => {
+  try {
+    const limit = Math.min(Number(req.body?.limit) || 10000, 10000);
+    const stuck = await Application.find({ status: 'DISCOVERED' }, { _id: 1 }).limit(limit).lean();
+    // addBulk pipelines all N adds into far fewer Redis round-trips than
+    // Promise.all(...map(queue.add)) — this exact loop, run against 8000+
+    // stuck applications, was the direct trigger for a prior Redis-quota
+    // incident (many independent command sequences fired at once).
+    const queue = getPipelineQueue();
+    await queue.addBulk(stuck.map(a => ({
+      name: 'evaluate',
+      data: { applicationId: a._id.toString() },
+    })));
+
+    // Also sweep in-flight applications (EVALUATING/INSPECTING_FORM/
+    // PREPARING/APPLYING) that have sat past staleTargetMinutes with no
+    // worker having moved them — covers the same class of gap as the
+    // DISCOVERED case above (a job that should exist never got created, or
+    // died before workers/stuckRecovery.js existed to catch it), just for
+    // the in-flight statuses instead of the pre-queue one. Each is marked
+    // FAILED then immediately resumed at the right stage via
+    // retryFailedApplication, same as a human clicking admin retry — this
+    // route is already an explicit admin action, so auto-resuming here
+    // (unlike the passive worker-crash path in queue/stuckRecovery.js,
+    // which deliberately leaves FAILED for a human to review) fits its
+    // existing purpose as a recovery tool.
+    const staleMinutes = Math.min(Number(req.body?.staleTargetMinutes) || 30, 24 * 60);
+    const staleCutoff = new Date(Date.now() - staleMinutes * 60 * 1000);
+    const staleInFlight = await Application.find({
+      status: { $in: IN_FLIGHT_STATUSES },
+      lastStatusChangeAt: { $lt: staleCutoff },
+    }).limit(limit);
+
+    let staleRecovered = 0, staleErrors = 0;
+    for (const application of staleInFlight) {
+      try {
+        transition(application, 'FAILED', `requeue-stuck — stale in ${application.status} for over ${staleMinutes}m, no active job`);
+        await application.save();
+        await retryFailedApplication(application, { note: 'requeue-stuck auto-recovery' });
+        staleRecovered++;
+      } catch (staleErr) {
+        console.error(`[requeue-stuck] failed to recover stale Application ${application._id}:`, staleErr.message);
+        staleErrors++;
+      }
+    }
+
+    res.json({ requeued: stuck.length, staleInFlightRecovered: staleRecovered, staleInFlightErrors: staleErrors });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /admin/applications/backfill-last-status-change — one-time migration:
+// sets lastStatusChangeAt (added to support DB-level sort/pagination on
+// Issues/Done — see models/application.js and routes/applications.js) on
+// every existing Application from its own statusHistory, since the schema
+// default only applies to documents created AFTER this field existed.
+// Idempotent — safe to re-run; only touches docs where the field is unset.
+router.post('/applications/backfill-last-status-change', requireAdmin, async (req, res) => {
+  try {
+    const limit = Math.min(Number(req.body?.limit) || 10000, 10000);
+    const targets = await Application.find(
+      { lastStatusChangeAt: { $exists: false } },
+      { statusHistory: 1, updatedAt: 1 }
+    ).limit(limit).lean();
+
+    const bulkOps = targets.map(a => {
+      const lastHistory = a.statusHistory?.[a.statusHistory.length - 1];
+      const at = lastHistory?.at || a.updatedAt || new Date();
+      return { updateOne: { filter: { _id: a._id }, update: { $set: { lastStatusChangeAt: at } } } };
+    });
+
+    if (bulkOps.length) await Application.bulkWrite(bulkOps, { ordered: false });
+    res.json({ updated: bulkOps.length, remaining: targets.length === limit });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // ─── Source management ────────────────────────────────────────────────────────
@@ -259,6 +367,87 @@ router.delete('/sources/:company', requireAdmin, async (req, res) => {
     if (!r.deletedCount) return res.status(404).json({ error: 'Not found' });
     res.json({ ok: true });
   } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ─── Pipeline config (agent-pipeline operational settings) ───────────────────
+
+// GET /admin/pipeline-config — fetch the singleton config, auto-seeds defaults
+router.get('/pipeline-config', requireAdmin, async (_req, res) => {
+  try {
+    const config = await PipelineConfig.findOneAndUpdate(
+      { key: 'default' },
+      { $setOnInsert: { key: 'default' } },
+      { new: true, upsert: true }
+    ).lean();
+    res.json(config);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// PUT /admin/pipeline-config — update thresholds / allowAutoSubmit / etc.
+router.put('/pipeline-config', requireAdmin, async (req, res) => {
+  try {
+    const { confidenceThresholds, allowAutoSubmit, alwaysManualFields, models, maxApplicationsPerDayGlobal } = req.body;
+    const config = await PipelineConfig.findOneAndUpdate(
+      { key: 'default' },
+      { $set: {
+          ...(confidenceThresholds !== undefined && { confidenceThresholds }),
+          ...(allowAutoSubmit !== undefined && { allowAutoSubmit }),
+          ...(alwaysManualFields !== undefined && { alwaysManualFields }),
+          ...(models !== undefined && { models }),
+          ...(maxApplicationsPerDayGlobal !== undefined && { maxApplicationsPerDayGlobal }),
+      } },
+      { new: true, upsert: true }
+    );
+    res.json(config);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /admin/applications/:id/retry — re-run pipeline for a FAILED app, or
+// re-enqueue an apply job for a FAILED apply, or force re-evaluation of a
+// REJECTED one. Not user-triggerable — this is the ONLY way REJECTED can move.
+router.post('/applications/:id/retry', requireAdmin, async (req, res) => {
+  try {
+    const application = await Application.findById(req.params.id);
+    if (!application) return res.status(404).json({ error: 'Not found' });
+
+    if (application.status === 'APPLYING') {
+      // Genuinely stuck APPLYING (e.g. a worker crash/restart mid-job lost
+      // track of it — confirmed via /admin/queues showing 0 active/waiting
+      // apply jobs while the application itself never transitioned out) has
+      // no other recovery path: it's already in the right state, just
+      // re-enqueue the submit job. Same trust-the-caller stance as
+      // SUBMISSION_UNCONFIRMED below — if the original attempt actually
+      // succeeded silently, this risks a double-submit; a human should
+      // check the target site/email first when in doubt.
+      await getApplyQueue().add('submit', { applicationId: application._id.toString(), retried: true });
+    } else if (application.status === 'SUBMISSION_UNCONFIRMED') {
+      // Only ever retry this after a human has manually confirmed the
+      // original attempt did NOT actually submit — this route trusts the
+      // caller on that, it can't verify it itself.
+      transition(application, 'APPLYING', 'admin retry — confirmed original attempt did not submit');
+      await application.save();
+      await getApplyQueue().add('submit', { applicationId: application._id.toString(), retried: true });
+    } else if (application.status === 'REJECTED') {
+      // REJECTED only ever comes from EVALUATING (see ALLOWED_TRANSITIONS) —
+      // unambiguous re-entry point.
+      transition(application, 'EVALUATING', 'admin retry');
+      await application.save();
+      await getPipelineQueue().add('evaluate', { applicationId: application._id.toString(), retried: true });
+    } else if (application.status === 'FAILED') {
+      await retryFailedApplication(application, { note: 'admin retry' });
+    } else {
+      return res.status(409).json({ error: `Cannot retry an application in status ${application.status}` });
+    }
+
+    res.json(application);
+  } catch (e) {
+    if (e instanceof InvalidTransitionError) return res.status(409).json({ error: e.message });
     res.status(500).json({ error: e.message });
   }
 });
