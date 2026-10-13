@@ -2673,29 +2673,45 @@ export const NAUKRI_TEMPLATE = `(async () => {
     minDelayMs: 2500,
     jitterMs: 2000,
 
-    maxConsecutiveFailures: 3
+    maxConsecutiveFailures: 3,
+
+    // Statuses that must be verified by hand before another attempt.
+    noRetry: [
+      "Applied",
+      "In progress",
+      "Outcome unknown",
+      "Needs review"
+    ]
   };
 
-  // Captured from the Apply Agent HAR. Not verified for jobs the agent
-  // never recommended — check the first few results before a big run.
+  // Shape of the apply call Naukri's own job-listing page sends (the
+  // Apply Agent variant returned HTTP 500 for scraped jobs).
   const BASE_APPLY_PAYLOAD = {
-    applySrc:
-      "JobAgent_RecoOld_Listing_CQ-desktop",
-    logstr:
-      "JobAgent_RecoOld_Listing_CQ-desktop",
-    crossdomain: false,
+    logstr: "----F-0-1---",
+    flowtype: "show",
+    crossdomain: true,
     jquery: 1,
-    webApp: 1,
+    rdxMsgId: "",
     chatBotSDK: true,
-    systemid: "jobseeker",
-    src: "NAUKRI_APPLY",
     applyTypeId: "107",
-    mod: "login",
+    closebtn: "y",
+    applySrc: "----F-0-1---",
     sid: "",
-    featuresFlag: {
-      jobAgent: true
-    }
+    mid: ""
   };
+
+  // The page authorises the call with the nauk_at access-token cookie.
+  // Read at call time (it rotates roughly hourly); never stored.
+  function getAccessToken() {
+    const match =
+      document.cookie.match(
+        /(?:^|;\\s*)nauk_at=([^;]+)/
+      );
+
+    return match
+      ? decodeURIComponent(match[1])
+      : "";
+  }
 
   function loadJSON(key, fallback) {
     try {
@@ -2831,12 +2847,36 @@ export const NAUKRI_TEMPLATE = `(async () => {
   }
 
   async function postApply(
-    jobId,
+    job,
     applyData
   ) {
+    const jobId =
+      String(job.jobId);
+
+    const token =
+      getAccessToken();
+
+    if (!token) {
+      return {
+        httpStatus: 401,
+        data: {
+          message:
+            "nauk_at cookie not readable — make sure you are signed in on naukri.com"
+        }
+      };
+    }
+
+    const skills =
+      String(job.tagsAndSkills || "")
+        .split(",")
+        .map(x => x.trim())
+        .filter(Boolean);
+
     const payload = {
       ...BASE_APPLY_PAYLOAD,
-      strJobsarr: [String(jobId)]
+      strJobsarr: [jobId],
+      mandatory_skills: skills.slice(0, 3),
+      optional_skills: skills.slice(3)
     };
 
     if (applyData) {
@@ -2858,7 +2898,10 @@ export const NAUKRI_TEMPLATE = `(async () => {
           Accept:
             "application/json",
           appid: "121",
-          systemid: "jobseeker"
+          systemid: "jobseeker",
+          clientid: "d3skt0p",
+          authorization:
+            "ACCESSTOKEN = " + token
         },
 
         body:
@@ -2885,13 +2928,16 @@ export const NAUKRI_TEMPLATE = `(async () => {
     const list =
       data?.jobs || [];
 
+    // A lone item is accepted only when it names no other job.
     return (
       list.find(
         x =>
           String(x.jobId) === id
       ) ||
-      list[0] ||
-      null
+      (list.length === 1 &&
+      !list[0].jobId
+        ? list[0]
+        : null)
     );
   }
 
@@ -2971,7 +3017,7 @@ export const NAUKRI_TEMPLATE = `(async () => {
       String(job.jobId);
 
     const first =
-      await postApply(id);
+      await postApply(job);
 
     const firstItem =
       pickItem(first.data, id);
@@ -3019,9 +3065,21 @@ export const NAUKRI_TEMPLATE = `(async () => {
     ) {
       setApplyStatus(
         id,
-        "Needs review",
-        firstItem?.message ||
-          "Unconfirmed result"
+        first.httpStatus >= 400
+          ? "Failed"
+          : "Needs review",
+        "HTTP " +
+          first.httpStatus +
+          ": " +
+          (firstItem?.message ||
+            first.data.message ||
+            "Unconfirmed result")
+      );
+
+      console.warn(
+        "Apply " + id + " →",
+        first.httpStatus,
+        first.data
       );
 
       return { outcome: "failed" };
@@ -3061,7 +3119,7 @@ export const NAUKRI_TEMPLATE = `(async () => {
     }
 
     const second =
-      await postApply(id, {
+      await postApply(job, {
         answers
       });
 
@@ -3125,10 +3183,15 @@ export const NAUKRI_TEMPLATE = `(async () => {
             selectedIds.has(
               String(job.jobId)
             ) &&
-            applyLedger[
-              String(job.jobId)
-            ]?.status !== "Applied"
+            !APPLY.noRetry.includes(
+              applyLedger[
+                String(job.jobId)
+              ]?.status
+            )
         )
+        // Highest score first (stable sort keeps recency order for ties),
+        // so "Max this run" means "top N by score".
+        .sort((a, b) => b.score - a.score)
         .slice(0, max);
 
     if (!queue.length) {
@@ -3202,10 +3265,14 @@ export const NAUKRI_TEMPLATE = `(async () => {
           await applyOne(job);
 
       } catch (error) {
+        // The request may have reached Naukri even though the response
+        // was lost — never auto-retry this job.
         setApplyStatus(
           String(job.jobId),
-          "Failed",
-          error.message
+          "Outcome unknown",
+          "Request interrupted (" +
+            error.message +
+            "). Check your Naukri applied jobs before retrying."
         );
 
         result = {
