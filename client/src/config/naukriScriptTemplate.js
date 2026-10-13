@@ -1795,6 +1795,52 @@ export const NAUKRI_TEMPLATE = `(async () => {
 
     </div>
 
+    <div class="nv23-applybar">
+
+      <span class="nv23-applybar-label">Auto-apply</span>
+
+      <label>
+        Score ≥
+        <input
+          type="number"
+          id="nv23-apply-min"
+          value="\${CONFIG.minScore}"
+        />
+      </label>
+
+      <button id="nv23-select-min">
+        Select visible
+      </button>
+
+      <button id="nv23-select-clear">
+        Clear
+      </button>
+
+      <label>
+        Max this run
+        <input
+          type="number"
+          id="nv23-apply-max"
+          value="50"
+        />
+      </label>
+
+      <button id="nv23-apply-go" class="nv23-apply-go">
+        Apply selected (0)
+      </button>
+
+      <button id="nv23-apply-stop" class="nv23-apply-stop" hidden>
+        Stop
+      </button>
+
+      <button id="nv23-apply-answers">
+        Answers
+      </button>
+
+      <span id="nv23-apply-status"></span>
+
+    </div>
+
     <div id="nv23-results"></div>
 
     <div id="nv23-tooltip" class="nv23-tooltip"></div>
@@ -2120,6 +2166,144 @@ export const NAUKRI_TEMPLATE = `(async () => {
       opacity: 1;
       transform: translateY(0);
     }
+
+    .nv23-applybar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px;
+
+      padding: 10px 22px;
+
+      border-bottom:
+        1px solid #27272a;
+
+      font-size: 12px;
+      color: #a1a1aa;
+    }
+
+    .nv23-applybar-label {
+      font-weight: 800;
+      color: #fafafa;
+    }
+
+    .nv23-applybar input[type="number"] {
+      width: 60px;
+
+      background: #18181b;
+      color: #fff;
+
+      border:
+        1px solid #3f3f46;
+
+      border-radius: 6px;
+
+      padding: 4px 6px;
+    }
+
+    .nv23-applybar button {
+      background: #18181b;
+      color: #fff;
+
+      border:
+        1px solid #3f3f46;
+
+      border-radius: 8px;
+
+      padding: 6px 10px;
+
+      cursor: pointer;
+    }
+
+    .nv23-applybar .nv23-apply-go {
+      background: #2563eb;
+      border-color: #2563eb;
+    }
+
+    .nv23-applybar .nv23-apply-stop {
+      background: #b91c1c;
+      border-color: #b91c1c;
+    }
+
+    .nv23-applybar button:disabled {
+      opacity: .45;
+      cursor: not-allowed;
+    }
+
+    .nv23-pick {
+      font-size: 12px;
+      color: #a1a1aa;
+      cursor: pointer;
+    }
+
+    .nv23-apply-status {
+      font-size: 11px;
+      font-weight: 700;
+      color: #a1a1aa;
+    }
+
+    .nv23-answers-modal {
+      position: absolute;
+      inset: 0;
+      z-index: 5;
+
+      display: flex;
+      align-items: center;
+      justify-content: center;
+
+      background: rgba(0,0,0,.7);
+    }
+
+    .nv23-answers-card {
+      width: min(640px, 92%);
+
+      background: #18181b;
+
+      border:
+        1px solid #3f3f46;
+
+      border-radius: 14px;
+
+      padding: 18px;
+
+      font-size: 12px;
+      color: #a1a1aa;
+    }
+
+    .nv23-answers-card textarea {
+      width: 100%;
+      min-height: 200px;
+
+      margin: 10px 0;
+
+      background: #09090b;
+      color: #fafafa;
+
+      border:
+        1px solid #3f3f46;
+
+      border-radius: 8px;
+
+      padding: 10px;
+
+      font: 12px/1.5 ui-monospace, monospace;
+    }
+
+    .nv23-answers-card button {
+      background: #27272a;
+      color: #fff;
+
+      border:
+        1px solid #3f3f46;
+
+      border-radius: 8px;
+
+      padding: 6px 12px;
+
+      margin-right: 8px;
+
+      cursor: pointer;
+    }
   \`;
 
   document.head
@@ -2136,6 +2320,8 @@ export const NAUKRI_TEMPLATE = `(async () => {
     overlay.querySelector(
       "#nv23-results"
     );
+
+  let visibleJobs = [];
 
   function render() {
     const searchText =
@@ -2248,6 +2434,8 @@ export const NAUKRI_TEMPLATE = `(async () => {
           )
       );
     }
+
+    visibleJobs = filtered;
 
     if (
       !filtered.length
@@ -2415,6 +2603,36 @@ export const NAUKRI_TEMPLATE = `(async () => {
                   Open ↗
                 </a>
 
+                <label class="nv23-pick">
+                  <input
+                    type="checkbox"
+                    data-select-job-id="\${escapeHTML(
+                      String(job.jobId)
+                    )}"
+                    \${
+                      selectedIds.has(
+                        String(job.jobId)
+                      )
+                        ? "checked"
+                        : ""
+                    }
+                  />
+                  Pick
+                </label>
+
+                <span
+                  class="nv23-apply-status"
+                  data-apply-status="\${escapeHTML(
+                    String(job.jobId)
+                  )}"
+                >
+                  \${escapeHTML(
+                    applyLedger[
+                      String(job.jobId)
+                    ]?.status || ""
+                  )}
+                </span>
+
                 <button
                   class="nv23-hide"
                   data-hide-job-id="\${escapeHTML(
@@ -2431,6 +2649,812 @@ export const NAUKRI_TEMPLATE = `(async () => {
         })
         .join("");
   }
+
+  // ============================================================
+  // AUTO-APPLY
+  // ============================================================
+  // Sequential, guarded batch apply through Naukri's own apply-workflow
+  // endpoint, using the signed-in session (credentials: include).
+  // Stops on 401/403/406/429, CAPTCHA/limit messages, daily quota, or
+  // repeated failures. Questionnaires are only answered from the
+  // user-defined answer map; a mandatory question with no matching rule
+  // parks the job as "Needs answers" instead of guessing.
+
+  const APPLY = {
+    path:
+      "/cloudgateway-workflow/workflow-services/apply-workflow/v1/apply",
+
+    ledgerKey:
+      "naukri_apply_ledger_v1",
+
+    answersKey:
+      "naukri_apply_answers_v1",
+
+    minDelayMs: 2500,
+    jitterMs: 2000,
+
+    maxConsecutiveFailures: 3
+  };
+
+  // Captured from the Apply Agent HAR. Not verified for jobs the agent
+  // never recommended — check the first few results before a big run.
+  const BASE_APPLY_PAYLOAD = {
+    applySrc:
+      "JobAgent_RecoOld_Listing_CQ-desktop",
+    logstr:
+      "JobAgent_RecoOld_Listing_CQ-desktop",
+    crossdomain: false,
+    jquery: 1,
+    webApp: 1,
+    chatBotSDK: true,
+    systemid: "jobseeker",
+    src: "NAUKRI_APPLY",
+    applyTypeId: "107",
+    mod: "login",
+    sid: "",
+    featuresFlag: {
+      jobAgent: true
+    }
+  };
+
+  function loadJSON(key, fallback) {
+    try {
+      return (
+        JSON.parse(
+          localStorage.getItem(key) ||
+            "null"
+        ) ?? fallback
+      );
+    } catch {
+      return fallback;
+    }
+  }
+
+  function saveJSON(key, value) {
+    try {
+      localStorage.setItem(
+        key,
+        JSON.stringify(value)
+      );
+    } catch {}
+  }
+
+  const applyLedger =
+    loadJSON(APPLY.ledgerKey, {});
+
+  // [{ match: "notice period", answer: "Immediately" }]
+  let applyRules =
+    loadJSON(APPLY.answersKey, []);
+
+  const selectedIds =
+    new Set();
+
+  let applyRun = null;
+
+  const applyStatusEl =
+    overlay.querySelector(
+      "#nv23-apply-status"
+    );
+
+  const applyGoBtn =
+    overlay.querySelector(
+      "#nv23-apply-go"
+    );
+
+  const applyStopBtn =
+    overlay.querySelector(
+      "#nv23-apply-stop"
+    );
+
+  function setApplyStatus(
+    id,
+    status,
+    message = ""
+  ) {
+    applyLedger[id] = {
+      ...(applyLedger[id] || {}),
+      status,
+      message,
+      updatedAt:
+        new Date().toISOString()
+    };
+
+    saveJSON(
+      APPLY.ledgerKey,
+      applyLedger
+    );
+
+    const el =
+      results.querySelector(
+        '[data-apply-status="' +
+          id +
+          '"]'
+      );
+
+    if (el) {
+      el.textContent = status;
+      el.title = message;
+    }
+  }
+
+  function updateApplyButton() {
+    applyGoBtn.textContent =
+      "Apply selected (" +
+      selectedIds.size +
+      ")";
+  }
+
+  function pickAnswer(question) {
+    const name =
+      normalize(
+        question.questionName || ""
+      );
+
+    const rule =
+      applyRules.find(
+        r =>
+          r.match &&
+          name.includes(
+            normalize(r.match)
+          )
+      );
+
+    if (!rule) {
+      return null;
+    }
+
+    const options =
+      question.answerOption &&
+      typeof question.answerOption ===
+        "object"
+        ? Object.values(
+            question.answerOption
+          ).map(String)
+        : [];
+
+    if (!options.length) {
+      return rule.answer;
+    }
+
+    const want =
+      normalize(rule.answer);
+
+    return (
+      options.find(
+        o => normalize(o) === want
+      ) ||
+      options.find(o =>
+        normalize(o).includes(want)
+      ) ||
+      null
+    );
+  }
+
+  async function postApply(
+    jobId,
+    applyData
+  ) {
+    const payload = {
+      ...BASE_APPLY_PAYLOAD,
+      strJobsarr: [String(jobId)]
+    };
+
+    if (applyData) {
+      payload.applyData = {
+        [String(jobId)]: applyData
+      };
+
+      payload.qupData = {};
+    }
+
+    const response =
+      await fetch(APPLY.path, {
+        method: "POST",
+        credentials: "include",
+
+        headers: {
+          "Content-Type":
+            "application/json",
+          Accept:
+            "application/json",
+          appid: "121",
+          systemid: "jobseeker"
+        },
+
+        body:
+          JSON.stringify(payload)
+      });
+
+    const text =
+      await response.text();
+
+    let data = null;
+
+    try {
+      data = JSON.parse(text);
+    } catch {}
+
+    return {
+      httpStatus:
+        response.status,
+      data
+    };
+  }
+
+  function pickItem(data, id) {
+    const list =
+      data?.jobs || [];
+
+    return (
+      list.find(
+        x =>
+          String(x.jobId) === id
+      ) ||
+      list[0] ||
+      null
+    );
+  }
+
+  const isApplySuccess = item =>
+    item?.status === 200 ||
+    /successfully applied/i.test(
+      item?.message || ""
+    );
+
+  // Returns a reason string when the whole run must halt.
+  function haltReason(res, item) {
+    if (
+      [401, 403, 406, 429].includes(
+        res.httpStatus
+      )
+    ) {
+      return (
+        "HTTP " +
+        res.httpStatus +
+        " — blocked/throttled/session expired"
+      );
+    }
+
+    const message =
+      item?.message ||
+      res.data?.message ||
+      "";
+
+    if (
+      !isApplySuccess(item) &&
+      /captcha|too many|limit (?:reached|exceeded)|quota/i.test(
+        message
+      )
+    ) {
+      return message;
+    }
+
+    const quota =
+      res.data?.quotaDetails;
+
+    if (
+      quota &&
+      Number(quota.dailyQuota) > 0 &&
+      Number(quota.dailyApplied) >=
+        Number(quota.dailyQuota) &&
+      !isApplySuccess(item)
+    ) {
+      return "Daily quota reached";
+    }
+
+    return null;
+  }
+
+  function showQuota(data) {
+    const quota =
+      data?.quotaDetails;
+
+    if (!quota) {
+      return;
+    }
+
+    applyStatusEl.textContent =
+      "Quota: " +
+      (quota.dailyApplied ?? "?") +
+      "/" +
+      (quota.dailyQuota ?? "?") +
+      " today · " +
+      (quota.monthlyApplied ?? "?") +
+      "/" +
+      (quota.monthlyQuota ?? "?") +
+      " month";
+  }
+
+  // outcome: applied | needs | failed | halt
+  async function applyOne(job) {
+    const id =
+      String(job.jobId);
+
+    const first =
+      await postApply(id);
+
+    const firstItem =
+      pickItem(first.data, id);
+
+    const firstHalt =
+      haltReason(first, firstItem);
+
+    if (firstHalt) {
+      return {
+        outcome: "halt",
+        reason: firstHalt
+      };
+    }
+
+    if (!first.data) {
+      setApplyStatus(
+        id,
+        "Failed",
+        "Non-JSON response (HTTP " +
+          first.httpStatus +
+          ")"
+      );
+
+      return { outcome: "failed" };
+    }
+
+    showQuota(first.data);
+
+    if (isApplySuccess(firstItem)) {
+      setApplyStatus(
+        id,
+        "Applied",
+        firstItem.message || ""
+      );
+
+      return { outcome: "applied" };
+    }
+
+    const questions =
+      firstItem?.questionnaire;
+
+    if (
+      !Array.isArray(questions) ||
+      !questions.length
+    ) {
+      setApplyStatus(
+        id,
+        "Needs review",
+        firstItem?.message ||
+          "Unconfirmed result"
+      );
+
+      return { outcome: "failed" };
+    }
+
+    const answers = {};
+    const missing = [];
+
+    for (const q of questions) {
+      const answer =
+        pickAnswer(q);
+
+      if (answer) {
+        answers[q.questionId] = [
+          answer
+        ];
+
+      } else if (q.isMandatory) {
+        missing.push(
+          q.questionName ||
+            q.questionId
+        );
+
+      } else {
+        answers[q.questionId] = [];
+      }
+    }
+
+    if (missing.length) {
+      setApplyStatus(
+        id,
+        "Needs answers",
+        missing.join(" | ")
+      );
+
+      return { outcome: "needs" };
+    }
+
+    const second =
+      await postApply(id, {
+        answers
+      });
+
+    const secondItem =
+      pickItem(second.data, id);
+
+    const secondHalt =
+      haltReason(
+        second,
+        secondItem
+      );
+
+    if (secondHalt) {
+      return {
+        outcome: "halt",
+        reason: secondHalt
+      };
+    }
+
+    showQuota(second.data);
+
+    if (isApplySuccess(secondItem)) {
+      setApplyStatus(
+        id,
+        "Applied",
+        secondItem.message || ""
+      );
+
+      return { outcome: "applied" };
+    }
+
+    setApplyStatus(
+      id,
+      "Needs review",
+      secondItem?.message ||
+        "Final response did not confirm"
+    );
+
+    return { outcome: "failed" };
+  }
+
+  async function runApply() {
+    if (applyRun) {
+      return;
+    }
+
+    const max =
+      Math.max(
+        1,
+        Number(
+          overlay.querySelector(
+            "#nv23-apply-max"
+          ).value
+        ) || 50
+      );
+
+    const queue =
+      finalJobs
+        .filter(
+          job =>
+            selectedIds.has(
+              String(job.jobId)
+            ) &&
+            applyLedger[
+              String(job.jobId)
+            ]?.status !== "Applied"
+        )
+        .slice(0, max);
+
+    if (!queue.length) {
+      alert(
+        "Nothing to apply to — select jobs first (already-applied jobs are skipped)."
+      );
+
+      return;
+    }
+
+    if (
+      !confirm(
+        "Apply to " +
+          queue.length +
+          " job(s) on Naukri using your signed-in session?\\n\\n" +
+          "This submits real applications. Jobs whose questionnaire has no matching answer rule are skipped. The run stops on blocks, quota or repeated failures."
+      )
+    ) {
+      return;
+    }
+
+    applyRun = {
+      cancelled: false
+    };
+
+    applyGoBtn.disabled = true;
+    applyStopBtn.hidden = false;
+
+    const tally = {
+      applied: 0,
+      needs: 0,
+      failed: 0
+    };
+
+    let consecutiveFailures = 0;
+    let haltedBecause = "";
+
+    for (
+      let i = 0;
+      i < queue.length;
+      i++
+    ) {
+      if (applyRun.cancelled) {
+        haltedBecause =
+          "Stopped by you";
+        break;
+      }
+
+      const job = queue[i];
+
+      applyStatusEl.textContent =
+        (i + 1) +
+        "/" +
+        queue.length +
+        " · applied " +
+        tally.applied +
+        " · needs answers " +
+        tally.needs +
+        " · failed " +
+        tally.failed;
+
+      setApplyStatus(
+        String(job.jobId),
+        "In progress"
+      );
+
+      let result;
+
+      try {
+        result =
+          await applyOne(job);
+
+      } catch (error) {
+        setApplyStatus(
+          String(job.jobId),
+          "Failed",
+          error.message
+        );
+
+        result = {
+          outcome: "failed"
+        };
+      }
+
+      if (
+        result.outcome === "halt"
+      ) {
+        setApplyStatus(
+          String(job.jobId),
+          "Ready",
+          "Halted before result"
+        );
+
+        haltedBecause =
+          result.reason;
+
+        break;
+      }
+
+      tally[result.outcome]++;
+
+      consecutiveFailures =
+        result.outcome === "failed"
+          ? consecutiveFailures + 1
+          : 0;
+
+      if (
+        consecutiveFailures >=
+        APPLY.maxConsecutiveFailures
+      ) {
+        haltedBecause =
+          APPLY.maxConsecutiveFailures +
+          " failures in a row";
+
+        break;
+      }
+
+      await sleep(
+        APPLY.minDelayMs +
+          Math.random() *
+            APPLY.jitterMs
+      );
+    }
+
+    const summary =
+      "Done — applied " +
+      tally.applied +
+      ", needs answers " +
+      tally.needs +
+      ", failed " +
+      tally.failed +
+      (haltedBecause
+        ? " · halted: " +
+          haltedBecause
+        : "");
+
+    applyStatusEl.textContent =
+      summary;
+
+    console.log(
+      "🚀 Auto-apply: " + summary
+    );
+
+    applyRun = null;
+    applyGoBtn.disabled = false;
+    applyStopBtn.hidden = true;
+  }
+
+  function openAnswersEditor() {
+    const modal =
+      document.createElement(
+        "div"
+      );
+
+    modal.className =
+      "nv23-answers-modal";
+
+    modal.innerHTML =
+      '<div class="nv23-answers-card">' +
+      "<b>Questionnaire answers</b><br>" +
+      "One rule per line: <code>question keyword => answer</code>. " +
+      "A rule matches when the question text contains the keyword. " +
+      "For multiple-choice questions the answer must match an option, " +
+      "otherwise the job is parked as “Needs answers”." +
+      '<textarea id="nv23-answers-text" placeholder="notice period => Immediately&#10;relocate => Yes"></textarea>' +
+      '<button id="nv23-answers-save">Save</button>' +
+      '<button id="nv23-answers-cancel">Cancel</button>' +
+      "</div>";
+
+    overlay.appendChild(modal);
+
+    const text =
+      modal.querySelector(
+        "#nv23-answers-text"
+      );
+
+    text.value =
+      applyRules
+        .map(
+          r =>
+            r.match +
+            " => " +
+            r.answer
+        )
+        .join("\\n");
+
+    modal.querySelector(
+      "#nv23-answers-cancel"
+    ).onclick = () =>
+      modal.remove();
+
+    modal.querySelector(
+      "#nv23-answers-save"
+    ).onclick = () => {
+      applyRules =
+        text.value
+          .split(/\\r?\\n/)
+          .map(line => {
+            const at =
+              line.indexOf("=>");
+
+            if (at < 0) {
+              return null;
+            }
+
+            const match =
+              line
+                .slice(0, at)
+                .trim();
+
+            const answer =
+              line
+                .slice(at + 2)
+                .trim();
+
+            return match && answer
+              ? { match, answer }
+              : null;
+          })
+          .filter(Boolean);
+
+      saveJSON(
+        APPLY.answersKey,
+        applyRules
+      );
+
+      modal.remove();
+    };
+  }
+
+  overlay
+    .querySelector(
+      "#nv23-select-min"
+    )
+    .addEventListener(
+      "click",
+      () => {
+        const min =
+          Number(
+            overlay.querySelector(
+              "#nv23-apply-min"
+            ).value
+          ) || 0;
+
+        for (
+          const job
+          of visibleJobs
+        ) {
+          const id =
+            String(job.jobId);
+
+          if (
+            job.score >= min &&
+            !hiddenJobIds.has(id) &&
+            applyLedger[id]
+              ?.status !== "Applied"
+          ) {
+            selectedIds.add(id);
+          }
+        }
+
+        updateApplyButton();
+        render();
+      }
+    );
+
+  overlay
+    .querySelector(
+      "#nv23-select-clear"
+    )
+    .addEventListener(
+      "click",
+      () => {
+        selectedIds.clear();
+        updateApplyButton();
+        render();
+      }
+    );
+
+  results.addEventListener(
+    "change",
+    event => {
+      const box =
+        event.target.closest(
+          "[data-select-job-id]"
+        );
+
+      if (!box) {
+        return;
+      }
+
+      const id =
+        box.dataset.selectJobId;
+
+      if (box.checked) {
+        selectedIds.add(id);
+      } else {
+        selectedIds.delete(id);
+      }
+
+      updateApplyButton();
+    }
+  );
+
+  applyGoBtn.addEventListener(
+    "click",
+    runApply
+  );
+
+  applyStopBtn.addEventListener(
+    "click",
+    () => {
+      if (applyRun) {
+        applyRun.cancelled = true;
+      }
+    }
+  );
+
+  overlay
+    .querySelector(
+      "#nv23-apply-answers"
+    )
+    .addEventListener(
+      "click",
+      openAnswersEditor
+    );
 
   // ============================================================
   // EVENTS
